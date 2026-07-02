@@ -398,6 +398,8 @@ export default function App() {
     }).finally(() => {
       setIsAuditingFramework(false);
     });
+  };
+
   const handleGenerateRemediation = () => {
     setIsAnalyzingRemediation(true);
     setRemediationResult(null);
