@@ -1,0 +1,6 @@
+{
+  "name": "Vinschool Science Curriculum Review Platform",
+  "description": "An internal research platform for curriculum developers, academic leaders, and teachers to review, analyse, and improve the Vinschool Science curriculum against the Cambridge Primary Science framework.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
