@@ -32,13 +32,14 @@ export const TRANSLATIONS = {
     // Sidebar Tabs
     tabExplorer: "Trình duyệt chương trình",
     tabMapping: "Bản đồ chuẩn Cambridge",
-    tabAuditor: "Kiểm định bài học AI",
-    tabQuestionGen: "Bộ sinh câu hỏi tư duy",
-    tabGuidanceGen: "Hướng dẫn cho giáo viên",
-    tabGapAnalysis: "Phân tích khoảng trống",
-    tabComparator: "So sánh song song",
+    tabAuditor: "Thẩm định Độ tương thích & Kiểm định Giáo án",
+    tabQuestionGen: "Trình xây dựng Câu hỏi Truy vấn Khoa học",
+    tabGuidanceGen: "Hướng dẫn Sư phạm & Phòng ngừa Sai lệch",
+    tabGapAnalysis: "Phân tích Khoảng trống Chương trình đối chiếu",
+    tabComparator: "Đối chiếu Song song & Tối ưu hóa Giáo án",
     tabDocuments: "Kho tri thức nghiên cứu",
-
+    tabScheduler: "Thiết kế Khung chương trình",
+    
     // Tab 1: Curriculum Explorer
     explorerHierarchy: "Cấu trúc Lớp {grade}",
     explorerInspector: "Chi tiết giáo án bài học",
@@ -63,7 +64,7 @@ export const TRANSLATIONS = {
     frameworkDirectory: "Thư mục khung chuẩn Cambridge",
 
     // Tab 3: AI Lesson Auditor
-    auditorTitle: "Công cụ kiểm định giáo án bằng AI",
+    auditorTitle: "Trình kiểm định & Thẩm định tương thích Giáo án",
     btnRunAudit: "Chạy kiểm định",
     auditingInProgress: "Đang phân tích giáo án...",
     scoreAlignment: "Điểm tương thích",
@@ -82,7 +83,7 @@ export const TRANSLATIONS = {
     gapDataEvaluation: "Đánh giá dữ liệu (Data Evaluation)",
 
     // Tab 4: Thinking Question Generator
-    questionGenTitle: "Bộ sinh câu hỏi dẫn dắt tư duy",
+    questionGenTitle: "Trình xây dựng Câu hỏi Truy vấn Khoa học",
     questionPhilosophy: "Triết lý 'How do we know?' (Làm sao ta biết?)",
     btnGenerateQuestions: "Sinh câu hỏi tư duy",
     generatingQuestions: "Đang sinh câu hỏi...",
@@ -94,7 +95,7 @@ export const TRANSLATIONS = {
     questionIdleDesc: "Hệ thống sẽ tạo ra các câu hỏi dẫn dắt tư duy bậc cao (phân tích, đánh giá, sáng tạo) thay vì các câu hỏi tái hiện kiến thức thông thường cho bài học: {title}",
 
     // Tab 5: Teacher Guidance Creator
-    guidanceCreatorTitle: "Bộ sinh hướng dẫn giảng dạy cho giáo viên",
+    guidanceCreatorTitle: "Hướng dẫn Sư phạm & Phòng ngừa Sai lệch",
     guidanceSubtitle: "Cẩm nang Sư phạm & Phòng tránh ngộ nhận",
     btnGenerateGuidance: "Sinh hướng dẫn sư phạm",
     generatingGuidance: "Đang tạo hướng dẫn...",
@@ -106,7 +107,7 @@ export const TRANSLATIONS = {
     guidanceIdleDesc: "Tạo khung tiến trình dạy học khám phá, cách thức tổ chức thực hành thí nghiệm và các chiến lược khắc phục ngộ nhận học sinh cho bài học: {title}",
 
     // Tab 6: Cambridge Gap Analysis
-    gapAnalysisTitle: "Báo cáo khoảng trống Vinschool vs Cambridge",
+    gapAnalysisTitle: "Phân tích Khoảng trống Chương trình đối chiếu",
     btnRunGapAnalysis: "Chạy báo cáo khoảng trống",
     runningGapAnalysis: "Đang đối chiếu khung chương trình...",
     gapsDetected: "Khoảng trống phát hiện: {count}",
@@ -165,10 +166,18 @@ export const TRANSLATIONS = {
 
     // File Upload additions
     labelDragDrop: "Kéo thả file vào đây hoặc click để chọn tệp",
-    labelSupportedFormats: "Hỗ trợ tệp lớn: PDF, DOCX, XLSX, CSV, TXT, MD, JSON",
+    labelSupportedFormats: "Supports large files: PDF, DOCX, XLSX, CSV, TXT, MD, JSON",
     labelParsingFile: "Đang trích xuất văn bản từ tệp tin...",
     labelManualIngest: "Nhập văn bản thủ công",
     labelFileUploadIngest: "Tải tệp tài liệu trực tiếp (Mọi định dạng)",
+
+    // Import lesson
+    btnImportLesson: "Nhập giáo án",
+    importLessonTitle: "Nhập giáo án mới qua AI",
+    importLessonInstructions: "Tải lên tệp giáo án (PDF/Word/Text) hoặc dán văn bản thô của giáo án Vinschool. AI sẽ tự động trích xuất các mục tiêu bài học, TWS, thời lượng, câu hỏi tư duy và thêm vào sidebar để rà soát.",
+    btnImportText: "Bắt đầu trích xuất bằng AI",
+    importingLesson: "AI đang phân tích và cấu trúc hóa giáo án...",
+    labelPasteLesson: "Nội dung giáo án thô hoặc dán văn bản",
   },
   en: {
     // Header & Global
@@ -209,6 +218,7 @@ export const TRANSLATIONS = {
     tabGapAnalysis: "Cambridge Gap Analysis",
     tabComparator: "Side-by-Side Comparator",
     tabDocuments: "Research Knowledge Base",
+    tabScheduler: "Curriculum Framework Builder",
 
     // Tab 1: Curriculum Explorer
     explorerHierarchy: "Stage {grade} Hierarchy",
@@ -340,5 +350,16 @@ export const TRANSLATIONS = {
     labelParsingFile: "Extracting text content from file...",
     labelManualIngest: "Manual Text Entry",
     labelFileUploadIngest: "Upload Document File (All Formats)",
+
+    // Import lesson
+    btnImportLesson: "Import Lesson",
+    importLessonTitle: "Import New Lesson via AI",
+    importLessonInstructions: "Upload a lesson plan file (PDF/Word/Text) or paste raw text of a Vinschool lesson. The AI will extract lesson objectives, TWS elements, duration, thinking questions, and insert it as a new lesson card in the sidebar for audit.",
+    btnImportText: "Extract Lesson Plan via AI",
+    importingLesson: "AI is parsing and structuring the lesson plan...",
+    labelPasteLesson: "Raw Lesson Content / Paste text here",
+
+    // Scheduler rename to Framework builder
+    tabScheduler: "Curriculum Design Workbench",
   }
 };

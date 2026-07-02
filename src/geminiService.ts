@@ -29,21 +29,17 @@ export function mapModelName(modelName: string): string {
 
 // Search utility to look up relevant text across loaded documents
 export function searchKnowledgeBase(query: string, documents: UploadedDocument[]): string {
-  const keywords = query.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  if (documents.length === 0) {
+    return "No reference documents loaded in the knowledge base.";
+  }
+  
+  // Combine all reference documents into a single curriculum context since Gemini has a huge context window
   let context = "";
   for (const doc of documents) {
     if (doc.status !== "ready") continue;
-    let score = 0;
-    for (const kw of keywords) {
-      if (doc.extractedText.toLowerCase().includes(kw)) {
-        score++;
-      }
-    }
-    if (score > 0) {
-      context += `[Source: ${doc.name}]\n${doc.extractedText.slice(0, 1200)}...\n\n`;
-    }
+    context += `[DOCUMENT: ${doc.name}]\n${doc.extractedText}\n\n`;
   }
-  return context || "No highly specific matching source text found in the research repository. Relying on default Cambridge Primary Science and Thinking and Working Scientifically (TWS) frameworks.";
+  return context;
 }
 
 interface RequestConfig {
@@ -243,13 +239,20 @@ export async function generateQuestions(
   const langLabel = config.language === "vi" ? "Vietnamese" : "English";
 
   const systemInstruction = `
-    You are an expert science curriculum designer. 
-    You create inquiry-oriented higher-order thinking questions (Bloom's Taxonomy: Analyzing, Evaluating, or Creating levels) following the "How do we know?" philosophy rather than simple fact-recall questions.
-    Your output must be in ${langLabel} language.
+    You are an expert internal Vinschool Science Curriculum Designer.
+    You create inquiry-oriented higher-order thinking questions (Bloom's Taxonomy: Analyzing, Evaluating, or Creating levels) following the "How do we know?" (Làm sao chúng ta biết chắc chắn) philosophy.
+    
+    You MUST strictly adhere to these Vinschool Thinking Question guidelines:
+    1. Tạo mâu thuẫn nhận thức (Cognitive Dissonance): Create situations where students realize there is uncertainty, conflict, or a puzzle that forces their brains to think.
+    2. Dịch chuyển trọng tâm (Methodological Shift): Move away from asking "What" (Cái gì) or recall questions with predefined answers (e.g. AVOID questions like "What conditions do seeds need to germinate?" or "Do plants need light to make organic matter?"). Instead, ask "How do we know it is true?" (Làm sao chúng ta biết chắc chắn).
+    3. Kích hoạt năng lực TWS: Open-ended questions that force students to design procedures, control variables, predict, measure, evaluate data, or verify models using evidence.
+    4. Độ dài: Keep the question prompt concise and punchy (under 100 Vietnamese words / 80 English words).
+    
+    Respond in ${langLabel} language.
   `;
 
   const prompt = `
-    Generate exactly three (3) high-quality questions for this lesson:
+    Generate exactly three (3) high-quality thinking questions for this Vinschool lesson:
     
     Lesson Title: ${lesson.title}
     Objectives: ${JSON.stringify(lesson.learningObjectives)}
@@ -258,18 +261,17 @@ export async function generateQuestions(
     Reference Grounding Context:
     ${docContext}
 
-    Guideline:
-    Each question must align with the "How do we know?" (Làm sao chúng ta biết?) philosophy. For example, instead of asking "What are the parts of a cell?", ask "How do we know plant cells have a rigid cell wall while animal cells only have a membrane? What evidence can we gather under a microscope to prove this?".
+    Ensure each question meets the Vinschool criteria above.
     
     Provide your output as a JSON object matching the following schema:
     {
       "questions": [
         {
           "level": "Analyzing" | "Evaluating" | "Creating",
-          "question": "The actual inquiry question prompt in ${langLabel}",
-          "pedagogicalIntent": "What cognitive mechanism or scientific concept this checks in ${langLabel}",
-          "expectedAnswerGuide": "What a model student answer should include in ${langLabel}",
-          "sourceReference": "Specific Cambridge standard or guidance chapter this is traceable to"
+          "question": "The actual inquiry question prompt in ${langLabel} (strictly under 100 words, starting with a cognitive dissonance or how-do-we-know setup)",
+          "pedagogicalIntent": "What cognitive mechanism, TWS skill, or scientific concept this checks in ${langLabel}",
+          "expectedAnswerGuide": "What a model student answer / evidence-grounded response should include in font of scientific reasoning in ${langLabel}",
+          "sourceReference": "Specific Cambridge standard code (e.g. 5Bi.01) this connects to"
         }
       ]
     }
@@ -312,8 +314,15 @@ export async function generateGuidance(
   const langLabel = config.language === "vi" ? "Vietnamese" : "English";
 
   const systemInstruction = `
-    You are an expert Cambridge Primary Science Mentor and Curriculum Advisor.
+    You are an expert Vinschool Science Mentor and Curriculum Specialist.
     You generate detailed, lesson-specific teacher guidance, pedagogical warnings, and active inquiry-based instructions.
+    
+    You MUST strictly adhere to these Vinschool Teacher Guidance guidelines:
+    1. Định hướng concept sư phạm: 'Đào tạo ngầm' (indirect training) for teachers on correct inquiry approaches. Avoid mechanical procedures (e.g. AVOID writing: 'Teacher divides class, conducts experiment, records data...'). Instead, explain HOW student scientific thinking is revealed, giving concepts, logical reasoning, and arguments.
+    2. Xử lý số liệu bất thường & lỗi thực nghiệm (Anomalies & Errors): Specify scenarios when students encounter anomalies, experimental errors, or unexpected results. E.g. 'If a seed germinates without water due to mold, guide teachers to ask: Does this reject or extend our initial hypothesis? What hidden variable did we fail to control?' instead of repeating the experiment.
+    3. Hoài nghi khoa học lành mạnh (Healthy Skepticism): Focus on questions that challenge the reliability of measuring tools, source of errors, or adjust model explanations based on new evidence.
+    4. Trọng tâm và Độ dài: Under 400 words. Do not write a full detailed lesson plan. Select the core scientific touchpoints. Focus on handling unexpected situations and scientific skepticism over safe, step-by-step procedures.
+    
     All outputs must be written in ${langLabel} language.
   `;
 
@@ -327,20 +336,20 @@ export async function generateGuidance(
     Knowledge Base Context:
     ${docContext}
 
-    Ensure your output contains warning flags for student misconceptions, lab setup instructions, and differentiation options.
+    Ensure your output contains warnings for misconceptions, lab guidelines handling anomalies, and conceptual touchpoints.
 
     Provide your output in JSON matching the following schema:
     {
-      "pedagogicalFramework": "Detailed strategy for guiding student inquiry in ${langLabel}",
+      "pedagogicalFramework": "Detailed strategy for guiding student inquiry, concept-based reasoning, and touchpoints in ${langLabel} (under 150 words)",
       "misconceptionAlerts": [
         {
           "misconception": "The wrong student belief in ${langLabel}",
           "scientificCorrection": "The proper scientific correction in ${langLabel}",
-          "interventionStrategy": "A rapid class activity or visual check to address it in ${langLabel}"
+          "interventionStrategy": "A rapid class activity, cognitive conflict check, or visual challenge to address it in ${langLabel}"
         }
       ],
-      "practicalLabGuidelines": "Clear, hands-on lab setup and safety guidelines in ${langLabel}",
-      "differentiationTips": "Concrete instructions for supporting lower-ability and extending high-ability researchers in ${langLabel}",
+      "practicalLabGuidelines": "Clear, hands-on lab guidelines detailing safety, handling anomalies, and questions for experimental errors in ${langLabel} (under 150 words)",
+      "differentiationTips": "Concrete instructions for supporting lower-ability and extending high-ability researchers using evidence and modeling in ${langLabel}",
       "curriculumTraceability": "Specific references from uploaded texts"
     }
 
@@ -553,4 +562,267 @@ export async function chatSpecialistAI(
   });
 
   return await executeWithFallback(config, systemInstruction, latestMessage);
+}
+
+// 7. Auto-extract raw curriculum text to a structured Vinschool LessonPlan
+export async function importLessonFromText(
+  rawText: string,
+  grade: number,
+  config: RequestConfig
+): Promise<LessonPlan> {
+  const langLabel = config.language === "vi" ? "Vietnamese" : "English";
+  const systemInstruction = `
+    You are a curriculum builder assistant. Your job is to extract, translate, and structure the raw text of a Vinschool Science lesson plan into a clean JSON format matching the schema.
+    Ensure that:
+    1. You generate both English (standard) and Vietnamese (Vi) properties.
+    2. The lesson plan is for Grade ${grade}.
+    3. The mapped Cambridge standards are listed as codes (e.g., '5Bi.01') that are mentioned or related.
+    4. TWS elements are structured with valid TWS stages: 'Planning', 'Obtaining & Presenting Evidence', or 'Analysis, Evaluation & Conclusions'.
+    5. Respond ONLY with the JSON matching the schema. Translate all texts accurately to Vietnamese for all "Vi" fields.
+  `;
+
+  const prompt = `
+    Here is the raw Vinschool Science lesson plan content:
+    ---
+    ${rawText}
+    ---
+  `;
+
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      unitId: { type: "STRING" },
+      unitTitle: { type: "STRING" },
+      unitTitleVi: { type: "STRING" },
+      lessonNumber: { type: "INTEGER" },
+      title: { type: "STRING" },
+      titleVi: { type: "STRING" },
+      durationMinutes: { type: "INTEGER" },
+      learningObjectives: {
+        type: "ARRAY",
+        items: { type: "STRING" }
+      },
+      learningObjectivesVi: {
+        type: "ARRAY",
+        items: { type: "STRING" }
+      },
+      mappedCambridgeStandards: {
+        type: "ARRAY",
+        items: { type: "STRING" }
+      },
+      twsElements: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            id: { type: "STRING" },
+            stage: { type: "STRING" },
+            stageVi: { type: "STRING" },
+            description: { type: "STRING" },
+            descriptionVi: { type: "STRING" },
+            bloomCognitiveLevel: { type: "STRING" }
+          },
+          required: ["id", "stage", "description", "bloomCognitiveLevel"]
+        }
+      },
+      activities: {
+        type: "ARRAY",
+        items: { type: "STRING" }
+      },
+      activitiesVi: {
+        type: "ARRAY",
+        items: { type: "STRING" }
+      },
+      thinkingQuestions: {
+        type: "ARRAY",
+        items: { type: "STRING" }
+      },
+      thinkingQuestionsVi: {
+        type: "ARRAY",
+        items: { type: "STRING" }
+      },
+      teacherGuidance: { type: "STRING" },
+      teacherGuidanceVi: { type: "STRING" }
+    },
+    required: [
+      "title",
+      "titleVi",
+      "unitId",
+      "unitTitle",
+      "unitTitleVi",
+      "lessonNumber",
+      "durationMinutes",
+      "learningObjectives",
+      "learningObjectivesVi",
+      "mappedCambridgeStandards",
+      "twsElements",
+      "activities",
+      "activitiesVi",
+      "thinkingQuestions",
+      "thinkingQuestionsVi",
+      "teacherGuidance",
+      "teacherGuidanceVi"
+    ]
+  };
+
+  const responseText = await executeWithFallback(config, systemInstruction, prompt, schema);
+  const parsed = JSON.parse(responseText);
+
+  return {
+    ...parsed,
+    id: `vsc_g${grade}_u${parsed.unitId.replace(/[^a-zA-Z0-9]/g, "")}_l${parsed.lessonNumber}_${Date.now()}`,
+    grade: grade as any,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+// 8. Audit and Optimize Curriculum Framework using AI
+export async function auditCurriculumFramework(
+  topics: any[],
+  totalPeriodsBudget: number,
+  standards: CambridgeStandard[],
+  documents: UploadedDocument[],
+  config: RequestConfig
+): Promise<any> {
+  const docContext = searchKnowledgeBase("Vinschool Science Curriculum Framework Guidance", documents);
+  const langLabel = config.language === "vi" ? "Vietnamese" : "English";
+
+  const systemInstruction = `
+    You are an expert internal Vinschool Science Curriculum Architect.
+    You audit the macro-level Curriculum Framework designed by the user.
+    The total annual teaching periods budget is ${totalPeriodsBudget} periods.
+    
+    Adhere strictly to:
+    1. Vinschool Science principles: Emphasis on Thinking and Working Scientifically (TWS).
+    2. Check the balance between allocated periods and the density/complexity of mapped standards.
+    3. Check for standards coverage: Identify which grade-level standards are unmapped (not taught).
+    4. Advise on TWS integration touchpoints and period adjustments.
+    
+    Respond in ${langLabel} language in valid JSON format.
+  `;
+
+  const prompt = `
+    Analyze this Curriculum Framework Draft:
+    Total Period Budget: ${totalPeriodsBudget} periods
+    
+    User-defined Topics:
+    ${JSON.stringify(topics.map(t => ({
+      name: t.name,
+      allocatedPeriods: t.allocatedPeriods,
+      mappedStandardCodes: t.mappedStandardCodes,
+      twsFocus: t.twsFocus
+    })))}
+    
+    All Cambridge Standards for this Grade Level:
+    ${JSON.stringify(standards.map(s => ({ code: s.code, description: s.description })))}
+
+    Knowledge Base Context:
+    ${docContext}
+  `;
+
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      periodBalanceAudit: { type: "STRING" },
+      coverageAudit: { type: "STRING" },
+      twsMappingAdvice: { type: "STRING" },
+      suggestedAdjustments: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            topicName: { type: "STRING" },
+            action: { type: "STRING" },
+            details: { type: "STRING" }
+          },
+          required: ["topicName", "action", "details"]
+        }
+      }
+    },
+    required: ["periodBalanceAudit", "coverageAudit", "twsMappingAdvice", "suggestedAdjustments"]
+  };
+
+  const responseText = await executeWithFallback(config, systemInstruction, prompt, schema);
+  return JSON.parse(responseText);
+}
+
+// 9. Generate Student Remediation & Intervention Plan based on Diagnostic Report
+export async function generateRemediationPlan(
+  diagnosticReport: string,
+  lessons: LessonPlan[],
+  standards: CambridgeStandard[],
+  documents: UploadedDocument[],
+  config: RequestConfig
+): Promise<any> {
+  const docContext = searchKnowledgeBase(diagnosticReport, documents);
+  const langLabel = config.language === "vi" ? "Vietnamese" : "English";
+
+  const systemInstruction = `
+    You are an expert internal Vinschool Science Pedagogical Diagnostician and Curriculum Advisor.
+    You analyze student diagnostic test reports, assessment feedback, or academic gap summaries.
+    
+    Your task is to:
+    1. Identify which Cambridge Primary Science or TWS standards student are weak at from the diagnostic input.
+    2. Map these weak standard codes directly to corresponding Vinschool active lessons from the provided list.
+    3. Generate custom Vinschool-aligned "How do we know?" (Làm sao chúng ta biết chắc chắn) thinking questions (Bloom higher-order, under 100 words, cognitive dissonance) specifically designed to target and fix this weak standard in those lessons.
+    4. Draft Teacher Pedagogical Exploitation Guidance (under 450 words, handling experimental errors/anomalies, healthy skepticism) instructing teachers exactly how to deploy these questions to remediate the weak points in class.
+    
+    Respond in ${langLabel} language in valid JSON format.
+  `;
+
+  const prompt = `
+    Student Diagnostic Feedback/Report:
+    "${diagnosticReport}"
+    
+    Active Vinschool Lessons:
+    ${JSON.stringify(lessons.map(l => ({ 
+      id: l.id, 
+      title: config.language === "vi" ? l.titleVi || l.title : l.title, 
+      mappedCambridgeStandards: l.mappedCambridgeStandards 
+    })))}
+    
+    Cambridge Grade Standards Reference:
+    ${JSON.stringify(standards.map(s => ({ code: s.code, description: s.description })))}
+
+    Knowledge Base Guidance Context:
+    ${docContext}
+  `;
+
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      identifiedWeaknesses: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            standardCode: { type: "STRING" },
+            standardDesc: { type: "STRING" },
+            reason: { type: "STRING" },
+            targetLessons: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            },
+            remediationQuestion: { type: "STRING" },
+            expectedAnswerGuide: { type: "STRING" },
+            teacherExploitationGuide: { type: "STRING" }
+          },
+          required: [
+            "standardCode", 
+            "standardDesc", 
+            "reason", 
+            "targetLessons", 
+            "remediationQuestion", 
+            "expectedAnswerGuide", 
+            "teacherExploitationGuide"
+          ]
+        }
+      },
+      overallInterventionStrategy: { type: "STRING" }
+    },
+    required: ["identifiedWeaknesses", "overallInterventionStrategy"]
+  };
+
+  const responseText = await executeWithFallback(config, systemInstruction, prompt, schema);
+  return JSON.parse(responseText);
 }

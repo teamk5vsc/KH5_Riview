@@ -8,15 +8,18 @@ interface DocumentSplitReaderProps {
   isOpen: boolean;
   onClose: () => void;
   language: "vi" | "en";
+  selectedDocId: string;
+  setSelectedDocId: (id: string) => void;
 }
 
 export default function DocumentSplitReader({ 
   documents, 
   isOpen, 
   onClose,
-  language
+  language,
+  selectedDocId,
+  setSelectedDocId
 }: DocumentSplitReaderProps) {
-  const [selectedDocId, setSelectedDocId] = useState<string>(documents[0]?.id || "");
   const [searchTerm, setSearchTerm] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
 

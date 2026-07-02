@@ -19,9 +19,11 @@ export type TabType =
   | "ai-review" 
   | "question-gen" 
   | "guidance-gen" 
+  | "remediation"
   | "gap-analysis" 
   | "comparator" 
-  | "documents";
+  | "documents"
+  | "scheduler";
 
 interface SidebarProps {
   currentTab: TabType;
@@ -72,6 +74,18 @@ export default function Sidebar({
       section: "AI COPROCESSOR"
     },
     {
+      id: "remediation" as TabType,
+      label: language === "vi" ? "Thiết kế Kế hoạch Can thiệp Khắc phục" : "Academic Intervention & Remediation Design",
+      icon: GraduationCap, // using GraduationCap for remediation
+      section: "AI COPROCESSOR"
+    },
+    {
+      id: "scheduler" as TabType,
+      label: t.tabScheduler,
+      icon: BookOpen, // swap scheduler icon to BookOpen
+      section: "CURRICULUM INTEL"
+    },
+    {
       id: "gap-analysis" as TabType,
       label: t.tabGapAnalysis,
       icon: Activity,
@@ -107,10 +121,10 @@ export default function Sidebar({
         </div>
         <div>
           <h1 className="text-xs font-semibold tracking-wide text-white leading-tight">
-            {language === "vi" ? "Vinschool Science" : "Vinschool Science"}
+            {language === "vi" ? "Vinschool Science 5" : "Vinschool Science 5"}
           </h1>
           <p className="text-[9px] text-gray-400 tracking-wider uppercase font-mono mt-0.5">
-            {language === "vi" ? "HỘI ĐỒNG KHẢO THÍ" : "Curriculum Review"}
+            {language === "vi" ? "TEAM REVIEW CHƯƠNG TRÌNH" : "Curriculum Review Team"}
           </p>
         </div>
       </div>

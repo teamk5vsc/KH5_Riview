@@ -36,7 +36,10 @@ import {
   generateQuestions, 
   generateGuidance, 
   performGapAnalysis, 
-  compareLessonsAI 
+  compareLessonsAI,
+  importLessonFromText,
+  auditCurriculumFramework,
+  generateRemediationPlan
 } from "./geminiService";
 import { parseDocumentFile } from "./fileParser";
 
@@ -141,8 +144,12 @@ export default function App() {
   const [documents, setDocuments] = useState<UploadedDocument[]>(() => {
     const saved = localStorage.getItem("uploaded_documents");
     return saved ? JSON.parse(saved) : DEFAULT_DOCUMENTS;
-  });
   const [isSplitReaderOpen, setIsSplitReaderOpen] = useState(false);
+  const [selectedDocIdReader, setSelectedDocIdReader] = useState<string>(() => {
+    const saved = localStorage.getItem("uploaded_documents");
+    const docs = saved ? JSON.parse(saved) : DEFAULT_DOCUMENTS;
+    return docs[0]?.id || "";
+  });
   
   // Floating AI states
   const [isFloatingAIAssistantOpen, setIsFloatingAIAssistantOpen] = useState(false);
@@ -189,6 +196,55 @@ export default function App() {
   const [newDocName, setNewDocName] = useState("");
   const [newDocType, setNewDocType] = useState<"PDF" | "Excel" | "Word">("PDF");
   const [newDocText, setNewDocText] = useState("");
+
+  // Import custom Vinschool lesson state
+  const [showImportLessonModal, setShowImportLessonModal] = useState(false);
+  const [importLessonText, setImportLessonText] = useState("");
+  const [isImportingLesson, setIsImportingLesson] = useState(false);
+  const [importLessonError, setImportLessonError] = useState<string | null>(null);
+
+  // Curriculum Framework Builder states
+  const [totalWeeks, setTotalWeeks] = useState<number>(35);
+  const [periodsPerWeek, setPeriodsPerWeek] = useState<number>(3); // Set to 3 as per user request
+  const [frameworkTopics, setFrameworkTopics] = useState<any[]>(() => {
+    const saved = localStorage.getItem("framework_topics");
+    return saved ? JSON.parse(saved) : [
+      {
+        id: "topic_1",
+        name: "Topic 1: Life Processes and Cells",
+        nameVi: "Chủ đề 1: Tế bào và Quá trình sống",
+        allocatedPeriods: 25,
+        mappedStandardCodes: ["5Bi.01", "5Bi.02", "5Bi.03"],
+        twsFocus: ["5TWSm.02", "5TWSc.08"]
+      },
+      {
+        id: "topic_2",
+        name: "Topic 2: State and Properties of Matter",
+        nameVi: "Chủ đề 2: Trạng thái và Tính chất Vật chất",
+        allocatedPeriods: 20,
+        mappedStandardCodes: ["5Cm.01", "5Cm.02"],
+        twsFocus: ["5TWSm.01", "5TWSa.01"]
+      },
+      {
+        id: "topic_3",
+        name: "Topic 3: Forces and Energy",
+        nameVi: "Chủ đề 3: Lực và Năng lượng",
+        allocatedPeriods: 30,
+        mappedStandardCodes: ["5Ps.01", "5Ps.02", "5Pe.01"],
+        twsFocus: ["5TWSp.03", "5TWSa.05"]
+      }
+    ];
+  });
+  const [activeFrameworkTopicId, setActiveFrameworkTopicId] = useState<string>("topic_1");
+  const [frameworkAuditResult, setFrameworkAuditResult] = useState<any | null>(null);
+  const [isAuditingFramework, setIsAuditingFramework] = useState(false);
+
+  // Remediation module states
+  const [diagnosticReport, setDiagnosticReport] = useState<string>(
+    "Học sinh khối 5 làm bài kiểm tra định kỳ có kết quả rất kém ở các câu hỏi liên quan đến vẽ biểu đồ cột để biểu diễn số liệu (5TWSa.05) và kỹ năng đưa ra dự đoán khoa học trong thí nghiệm đo lực ma sát (5TWSp.03). Đồng thời, nhiều học sinh vẫn bị ngộ nhận rằng màng tế bào thực vật cũng có tính chất cứng cáp bảo vệ giống như thành tế bào (5Bi.01)."
+  );
+  const [remediationResult, setRemediationResult] = useState<any | null>(null);
+  const [isAnalyzingRemediation, setIsAnalyzingRemediation] = useState(false);
 
   // Persist settings
   const handleSaveSettings = (key: string, model: string) => {
@@ -286,14 +342,83 @@ export default function App() {
     }
   };
 
+  // Import Vinschool Lesson Plan via File or Raw Text
+  const handleImportLessonFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsImportingLesson(true);
+    setImportLessonError(null);
+    try {
+      const { textContent } = await parseDocumentFile(file);
+      await performLessonTextImport(textContent);
+    } catch (err: any) {
+      console.error(err);
+      setImportLessonError(err.message || "Failed to parse imported file.");
+    } finally {
+      setIsImportingLesson(false);
+    }
+  };
+
+  const performLessonTextImport = async (text: string) => {
+    if (!text.trim()) return;
+    setIsImportingLesson(true);
+    setImportLessonError(null);
+    
+    if (!apiKey) {
+      setShowSettingsModal(true);
+      showToast(t.errorApiKeyRequired);
+      setIsImportingLesson(false);
+      return;
+    }
+
+    try {
+      const newLesson = await importLessonFromText(text, gradeFilter, getAIConfig());
+      setLessons(prev => [newLesson, ...prev]);
+      setSelectedLessonId(newLesson.id);
+      setShowImportLessonModal(false);
+      setImportLessonText("");
+      showToast(language === "vi" ? "Đã nạp giáo án mới thành công bằng AI!" : "New lesson plan parsed and imported!");
+    } catch (err: any) {
+      console.error(err);
+      setImportLessonError(err.message || "AI failed to extract lesson structure from text.");
+    } finally {
+      setIsImportingLesson(false);
+    }
+  };
+
+  const handleAuditFramework = () => {
+    setIsAuditingFramework(true);
+    setFrameworkAuditResult(null);
+    handleAICallWrapper(async () => {
+      const totalPeriodsBudget = totalWeeks * periodsPerWeek;
+      const data = await auditCurriculumFramework(frameworkTopics, totalPeriodsBudget, standards, documents, getAIConfig());
+      setFrameworkAuditResult(data);
+      showToast(language === "vi" ? "Đã kiểm định khung chương trình học thuật bằng AI!" : "Academic curriculum framework audited!");
+      setIsAuditingFramework(false);
+    }).finally(() => {
+      setIsAuditingFramework(false);
+    });
+  const handleGenerateRemediation = () => {
+    setIsAnalyzingRemediation(true);
+    setRemediationResult(null);
+    handleAICallWrapper(async () => {
+      const data = await generateRemediationPlan(diagnosticReport, lessons, standards, documents, getAIConfig());
+      setRemediationResult(data);
+      showToast(language === "vi" ? "Đã phân tích báo cáo và sinh tài liệu khắc phục!" : "Remediation plan generated successfully!");
+      setIsAnalyzingRemediation(false);
+    }).finally(() => {
+      setIsAnalyzingRemediation(false);
+    });
+  };
+
   // UI status progress helper
   const getAIConfig = () => {
     return {
       apiKey,
       selectedModel,
       language,
-      onProgress: (model: string, attempt: number, status: string) => {
-        setModelProgressInfo({ model, attempt, status });
+      onProgress: (modelUsed: string, attempt: number, status: string) => {
+        setModelProgressInfo({ model: modelUsed, attempt, status });
       }
     };
   };
@@ -578,6 +703,15 @@ export default function App() {
                     </h3>
                     <h2 className="text-sm font-bold text-gray-800 mt-0.5">{language === "vi" ? "Danh mục bài học" : "Unit & Lesson Explorer"}</h2>
                   </div>
+                  
+                  {/* Plus Import Lesson Button */}
+                  <button
+                    onClick={() => setShowImportLessonModal(true)}
+                    className="p-1.5 hover:bg-gray-200 rounded-lg text-amber-500 hover:text-amber-600 transition-all cursor-pointer flex items-center justify-center border border-gray-200 bg-white shadow-sm"
+                    title={language === "vi" ? "Nhập giáo án mới bằng AI" : "Import new lesson via AI"}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -685,7 +819,7 @@ export default function App() {
                         </h4>
                         <div className="space-y-2">
                           {(language === "vi" && activeLesson.learningObjectivesVi ? activeLesson.learningObjectivesVi : activeLesson.learningObjectives).map((obj, i) => (
-                            <div key={i} className="flex gap-2 items-start bg-gray-50 border border-gray-100 p-3 rounded-xl text-xs text-gray-700">
+                            <div key={i} className="flex gap-2 items-start bg-gray-50 border border-gray-100 p-3 rounded-xl text-xs text-gray-700 font-sans">
                               <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-955 font-bold flex items-center justify-center shrink-0">
                                 {i + 1}
                               </span>
@@ -706,13 +840,13 @@ export default function App() {
                             return (
                               <div 
                                 key={code}
-                                className="bg-emerald-50 text-emerald-950 border border-emerald-100 p-3 rounded-xl text-xs max-w-md shadow-sm"
+                                className="bg-emerald-50 text-emerald-955 border border-emerald-100 p-3 rounded-xl text-xs max-w-md shadow-sm font-sans"
                               >
-                                <div className="flex justify-between items-center mb-1">
-                                  <span className="px-1.5 py-0.5 bg-emerald-600 text-white rounded text-[9px] font-bold font-mono">
+                                <div className="flex justify-between items-center mb-1 font-mono">
+                                  <span className="px-1.5 py-0.5 bg-emerald-600 text-white rounded text-[9px] font-bold">
                                     {code}
                                   </span>
-                                  <span className="text-[10px] font-mono text-emerald-700/80 uppercase font-semibold">
+                                  <span className="text-[10px] text-emerald-700/80 uppercase font-semibold">
                                     {translateStrand(matchedStd?.strand || "Standard")}
                                   </span>
                                 </div>
@@ -723,7 +857,7 @@ export default function App() {
                             );
                           })}
                           {activeLesson.mappedCambridgeStandards.length === 0 && (
-                            <p className="text-xs text-gray-400 italic">No Cambridge standards mapped yet.</p>
+                            <p className="text-xs text-gray-400 italic font-sans">No Cambridge standards mapped yet.</p>
                           )}
                         </div>
                       </div>
@@ -795,9 +929,26 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-gray-400">
-                    <Layers className="w-12 h-12 text-gray-300 stroke-1 mb-2 animate-pulse" />
-                    <p className="text-sm">{t.unselectedLesson}</p>
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center max-w-lg mx-auto space-y-6">
+                    <div className="relative w-full h-56 rounded-3xl overflow-hidden shadow-xl border border-gray-250/20 bg-gradient-to-tr from-[#18181b] to-gray-800 animate-fade-in">
+                      <img src="/science_banner.png" alt="Science Banner" className="w-full h-full object-cover opacity-80" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#18181b] via-[#18181b]/35 to-transparent flex items-end p-4.5">
+                        <div className="text-left">
+                          <span className="text-[10px] font-mono text-amber-400 uppercase tracking-widest font-bold">Vinschool Science 5</span>
+                          <h3 className="text-sm font-bold text-white mt-1 leading-snug">
+                            {language === "vi" ? "Không gian Thẩm định & Phát triển Khung" : "Curriculum Audit Workspace"}
+                          </h3>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-500 leading-relaxed font-sans max-w-sm">
+                        {language === "vi"
+                          ? "Vui lòng chọn một bài học ở danh mục bên trái hoặc tải lên giáo án để bắt đầu phân tích tương thích chuẩn Cambridge và năng lực TWS."
+                          : "Please select a lesson from the left directory or import a new file to begin mapping standards and TWS integration audits."}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -854,14 +1005,14 @@ export default function App() {
               <div className="col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden h-140">
                 <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
                   <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans font-sans">
                       Stage {gradeFilter} Cambridge Standards
                     </h3>
                     <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.frameworkDirectory}</h2>
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                <div className="flex-1 overflow-y-auto p-5 space-y-4 animate-fade-in">
                   {standards
                     .filter(s => s.stage === gradeFilter)
                     .map((std) => {
@@ -919,7 +1070,7 @@ export default function App() {
               {/* Title Bar */}
               <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans">Module: AI Curriculum Auditor</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans font-sans">Module: AI Curriculum Auditor</h3>
                   <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.auditorTitle}</h2>
                 </div>
                 
@@ -947,7 +1098,7 @@ export default function App() {
                 
                 {/* Gaps scanning checklist selectors */}
                 <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
-                  <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                  <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest font-mono flex items-center gap-1.5 font-sans">
                     <Activity className="w-3.5 h-3.5 text-amber-500" />
                     {t.gapSelectionTitle}
                   </h4>
@@ -1005,16 +1156,16 @@ export default function App() {
                         }`}>
                           {activeAnalysis.alignmentScore}%
                         </span>
-                        <p className="text-[10px] text-gray-500 mt-2 font-medium">Cambridge Objective Match</p>
+                        <p className="text-[10px] text-gray-500 mt-2 font-medium font-sans">Cambridge Objective Match</p>
                       </div>
 
                       {/* Cognitive Depth Card */}
                       <div className="col-span-1 bg-gray-50 border border-gray-100 rounded-xl p-4 flex flex-col items-center justify-center text-center">
                         <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-widest">{t.scoreCognitive}</span>
-                        <span className="text-xs font-bold text-gray-800 mt-2 truncate max-w-full">
+                        <span className="text-xs font-bold text-gray-800 mt-2 truncate max-w-full font-sans">
                           {activeAnalysis.cognitiveDepthRating}
                         </span>
-                        <p className="text-[10px] text-gray-500 mt-2 font-medium">Bloom's Taxonomy Audit</p>
+                        <p className="text-[10px] text-gray-500 mt-2 font-medium font-sans">Bloom's Taxonomy Audit</p>
                       </div>
 
                       {/* Verification Source badge */}
@@ -1023,7 +1174,7 @@ export default function App() {
                         <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-1 rounded-full border border-green-200 mt-2 uppercase font-mono">
                           Verified Grounded
                         </span>
-                        <p className="text-[9px] text-gray-500 mt-2 font-mono truncate max-w-full">
+                        <p className="text-[9px] text-gray-550 mt-2 font-mono truncate max-w-full">
                           {activeAnalysis.referencedSources[0] || "Ingested Syllabus"}
                         </p>
                       </div>
@@ -1031,7 +1182,7 @@ export default function App() {
                     </div>
 
                     {/* TWS Audit details */}
-                    <div className="bg-sky-50 text-sky-950 border border-sky-100 rounded-xl p-4 font-sans">
+                    <div className="bg-sky-50 text-sky-955 border border-sky-100 rounded-xl p-4 font-sans">
                       <h4 className="text-xs font-bold text-sky-900 uppercase tracking-wider font-mono mb-1">
                         {t.twsAuditSection}
                       </h4>
@@ -1053,7 +1204,7 @@ export default function App() {
                         </ul>
                       </div>
 
-                      <div className="bg-red-50 text-red-950 border border-red-100 rounded-xl p-4">
+                      <div className="bg-red-50 text-red-955 border border-red-100 rounded-xl p-4">
                         <h4 className="text-xs font-bold text-red-900 uppercase tracking-wider font-mono mb-2">
                           {t.gapsTitle}
                         </h4>
@@ -1072,7 +1223,7 @@ export default function App() {
                       </h4>
                       <div className="space-y-2">
                         {activeAnalysis.actionableImprovements.map((imp, i) => (
-                          <div key={i} className="flex gap-2 items-start text-xs text-amber-955 leading-relaxed">
+                          <div key={i} className="flex gap-2 items-start text-xs text-amber-955 leading-relaxed font-sans">
                             <span className="w-5 h-5 rounded-full bg-amber-100 font-bold flex items-center justify-center shrink-0">
                               {i + 1}
                             </span>
@@ -1103,7 +1254,7 @@ export default function App() {
               {/* Title Bar */}
               <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans font-sans">Module: Thinking Question Generator</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans font-sans font-sans">Module: Thinking Question Generator</h3>
                   <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.questionGenTitle}</h2>
                 </div>
                 
@@ -1130,7 +1281,7 @@ export default function App() {
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div className="bg-amber-50 text-amber-955 border border-amber-100 rounded-xl p-3.5 text-xs flex gap-2">
                   <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <p>
+                  <p className="font-sans">
                     {language === "vi" 
                       ? "Các câu hỏi được thiết kế theo đúng triết lý \"Làm sao ta biết?\" (How do we know?) giúp giáo viên kiểm tra được lập luận, bằng chứng khoa học và phương pháp thu thập dữ liệu thay vì chỉ hỏi lý thuyết học vẹt."
                       : "Questions are generated according to the \"How do we know?\" framework, focusing on scientific inquiry, evidence gathering, and experimentation rather than direct memory recall."}
@@ -1158,7 +1309,7 @@ export default function App() {
                         {q.question}
                       </p>
 
-                      <div className="text-xs text-gray-600 space-y-2 leading-relaxed font-sans">
+                      <div className="text-xs text-gray-650 space-y-2 leading-relaxed font-sans">
                         <p><span className="font-semibold text-gray-700">{t.pedagogicalIntent}:</span> {q.pedagogicalIntent}</p>
                         <p className="text-amber-900/90 bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/50 mt-1">
                           <span className="font-semibold text-amber-955 font-mono text-[10px] block uppercase mb-1">{t.expectedAnswer}:</span> 
@@ -1176,7 +1327,7 @@ export default function App() {
                   <div className="text-center py-16 text-gray-400 max-w-md mx-auto">
                     <HelpCircle className="w-10 h-10 mx-auto text-amber-400 animate-pulse mb-3" />
                     <h4 className="text-sm font-bold text-gray-700 font-sans">{t.questionIdleTitle}</h4>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed font-sans font-sans">
+                    <p className="text-xs text-gray-500 mt-1 leading-relaxed font-sans font-sans font-sans">
                       {t.questionIdleDesc.replace("{title}", language === "vi" ? activeLesson?.titleVi || activeLesson?.title : activeLesson?.title || "")}
                     </p>
                   </div>
@@ -1192,7 +1343,7 @@ export default function App() {
               {/* Title Bar */}
               <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans">Module: Teacher Guidance Creator</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans font-sans">Module: Teacher Guidance Creator</h3>
                   <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.guidanceCreatorTitle}</h2>
                 </div>
                 
@@ -1238,12 +1389,12 @@ export default function App() {
                       <div className="space-y-3 font-sans">
                         {generatedGuidance.misconceptionAlerts.map((m: any, i: number) => (
                           <div key={i} className="bg-red-50/50 border border-red-100 rounded-xl p-4 space-y-2">
-                            <div className="text-xs font-bold text-red-800 uppercase font-mono">
+                            <div className="text-xs font-bold text-red-800 uppercase font-mono font-mono">
                               ALERT {i + 1}: "{m.misconception}"
                             </div>
-                            <div className="text-xs text-red-955 leading-relaxed space-y-1">
+                            <div className="text-xs text-red-955 leading-relaxed space-y-1 font-sans">
                               <p><span className="font-semibold">{language === "vi" ? "Giải thích Khoa học" : "Scientific Correction"}:</span> {m.scientificCorrection}</p>
-                              <p className="text-gray-600"><span className="font-semibold text-red-900">{language === "vi" ? "Cách can thiệp" : "Intervention Strategy"}:</span> {m.interventionStrategy}</p>
+                              <p className="text-gray-650"><span className="font-semibold text-red-900">{language === "vi" ? "Cách can thiệp" : "Intervention Strategy"}:</span> {m.interventionStrategy}</p>
                             </div>
                           </div>
                         ))}
@@ -1270,16 +1421,16 @@ export default function App() {
                       </p>
                     </div>
 
-                    <div className="text-[10px] text-gray-400 font-mono pt-4 border-t border-gray-100 uppercase text-right">
+                    <div className="text-[10px] text-gray-405 font-mono pt-4 border-t border-gray-100 uppercase text-right">
                       Traceability: {generatedGuidance.curriculumTraceability}
                     </div>
 
                   </div>
                 ) : (
-                  <div className="text-center py-16 text-gray-400 max-w-md mx-auto">
+                  <div className="text-center py-16 text-gray-400 max-w-md mx-auto font-sans">
                     <FileText className="w-10 h-10 mx-auto text-amber-400 animate-pulse mb-3" />
-                    <h4 className="text-sm font-bold text-gray-700 font-sans">{t.guidanceIdleTitle}</h4>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed font-sans">
+                    <h4 className="text-sm font-bold text-gray-700">{t.guidanceIdleTitle}</h4>
+                    <p className="text-xs text-gray-550 mt-1 leading-relaxed">
                       {t.guidanceIdleDesc.replace("{title}", language === "vi" ? activeLesson?.titleVi || activeLesson?.title : activeLesson?.title || "")}
                     </p>
                   </div>
@@ -1290,12 +1441,12 @@ export default function App() {
 
           {/* TAB 6: CAMBRIDGE GAP ANALYSIS */}
           {currentTab === "gap-analysis" && (
-            <div className="max-w-4xl mx-auto bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden h-140 flex flex-col">
+            <div className="max-w-4xl mx-auto bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden h-140 flex flex-col animate-fade-in">
               
               {/* Title Bar */}
               <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans">Module: Cambridge Gap Analysis</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans font-sans">Module: Cambridge Gap Analysis</h3>
                   <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.gapAnalysisTitle}</h2>
                 </div>
                 
@@ -1326,7 +1477,7 @@ export default function App() {
                     {/* Summary and Metrics */}
                     <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 flex items-center justify-between font-mono">
                       <div className="space-y-1">
-                        <h3 className="text-sm font-bold text-gray-900 leading-none">
+                        <h3 className="text-sm font-bold text-gray-900 leading-none font-sans">
                           {activeGapReport.title}
                         </h3>
                         <p className="text-xs text-gray-550">
@@ -1345,7 +1496,7 @@ export default function App() {
                     </div>
 
                     {/* Interactive lists of gaps */}
-                    <div className="space-y-3.5">
+                    <div className="space-y-3.5 font-sans">
                       {activeGapReport.identifiedGaps.map((gap, idx) => (
                         <div key={idx} className="bg-white border border-gray-200 rounded-xl p-4.5 space-y-3.5 relative shadow-sm">
                           
@@ -1366,12 +1517,12 @@ export default function App() {
                           </div>
 
                           <div className="text-xs space-y-2">
-                            <p><span className="font-semibold text-gray-700">{t.standardRequirement}:</span> {gap.standardDesc}</p>
+                            <p><span className="font-semibold text-gray-700 font-sans">{t.standardRequirement}:</span> {gap.standardDesc}</p>
                             <p className="text-red-900 bg-red-50/40 p-2.5 rounded-lg border border-red-100/50">
                               <span className="font-semibold text-red-955 block font-mono text-[10px] uppercase mb-1">{t.omissionDesc}:</span> 
                               {gap.description}
                             </p>
-                            <p className="text-emerald-900 bg-emerald-50/40 p-2.5 rounded-lg border border-emerald-100/50 font-sans">
+                            <p className="text-emerald-900 bg-emerald-50/40 p-2.5 rounded-lg border border-emerald-100/50">
                               <span className="font-semibold text-emerald-955 block font-mono text-[10px] uppercase mb-1">{t.actionPlan}:</span> 
                               {gap.recommendation}
                             </p>
@@ -1404,7 +1555,7 @@ export default function App() {
             <div className="max-w-5xl mx-auto h-full space-y-6">
               
               {/* Selector panel */}
-              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
+              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-sm font-bold text-gray-900 font-sans">{t.comparatorTitle}</h2>
                   <p className="text-xs text-gray-500 mt-0.5 font-sans">{t.comparatorSubtitle}</p>
@@ -1465,7 +1616,7 @@ export default function App() {
               </div>
 
               {/* Comparisons columns layout */}
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-2 gap-6 font-sans">
                 {/* Lesson A Column */}
                 {(() => {
                   const lessonA = lessons.find(l => l.id === compareIdA) || lessons[0];
@@ -1504,7 +1655,7 @@ export default function App() {
                         <div className="space-y-2 font-sans">
                           {lessonA.twsElements.map(tws => (
                             <div key={tws.id} className="bg-sky-50/50 p-2 rounded border border-sky-100 text-[11px] text-sky-900">
-                              <span className="font-semibold text-[10px] text-sky-950 uppercase font-mono block">{translateTwsStage(tws.stage)}</span>
+                              <span className="font-semibold text-[10px] text-sky-955 uppercase font-mono block">{translateTwsStage(tws.stage)}</span>
                               <p className="mt-0.5 leading-relaxed">{language === "vi" ? tws.descriptionVi || tws.description : tws.description}</p>
                             </div>
                           ))}
@@ -1549,7 +1700,7 @@ export default function App() {
 
                       <div className="border-t border-gray-100 pt-3">
                         <span className="text-[10px] font-mono font-bold text-gray-400 block mb-2 uppercase">{t.twsSkills}</span>
-                        <div className="space-y-2 font-sans">
+                        <div className="space-y-2 font-sans font-sans">
                           {lessonB.twsElements.map(tws => (
                             <div key={tws.id} className="bg-sky-50/50 p-2 rounded border border-sky-100 text-[11px] text-sky-900 font-sans">
                               <span className="font-semibold text-[10px] text-sky-955 uppercase font-mono block">{translateTwsStage(tws.stage)}</span>
@@ -1578,19 +1729,19 @@ export default function App() {
                         <p>{compareResult.comparisonSummary}</p>
                       </div>
 
-                      <div className="bg-sky-50/50 p-4 rounded-xl border border-sky-100/60 text-sky-955">
+                      <div className="bg-sky-50/50 p-4 rounded-xl border border-sky-100/60 text-sky-955 animate-fade-in">
                         <h4 className="font-bold text-sky-900 font-mono text-[10px] uppercase mb-1.5">{t.aiCompareTws}</h4>
                         <p>{compareResult.twsIntegrationComparison}</p>
                       </div>
                     </div>
 
                     <div className="space-y-4">
-                      <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100/60 text-purple-955">
+                      <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100/60 text-purple-955 animate-fade-in">
                         <h4 className="font-bold text-purple-900 font-mono text-[10px] uppercase mb-1.5">{t.aiCompareCognitive}</h4>
                         <p>{compareResult.cognitiveDepthAnalysis}</p>
                       </div>
 
-                      <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100/60 text-emerald-955">
+                      <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100/60 text-emerald-955 animate-fade-in">
                         <h4 className="font-bold text-emerald-900 font-mono text-[10px] uppercase mb-1.5">{t.aiCompareRevisions}</h4>
                         <p>{compareResult.recommendedRevisions}</p>
                       </div>
@@ -1615,7 +1766,7 @@ export default function App() {
                   {documents.map((doc) => (
                     <div 
                       key={doc.id}
-                      className="p-3 bg-gray-50 border border-gray-100 hover:bg-gray-100/50 rounded-xl flex items-center justify-between transition-colors"
+                      className="p-3 bg-gray-50 border border-gray-100 hover:bg-gray-100/50 rounded-xl flex items-center justify-between transition-colors animate-fade-in"
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5 font-sans">
@@ -1633,8 +1784,8 @@ export default function App() {
                       
                       <button
                         onClick={() => {
+                          setSelectedDocIdReader(doc.id);
                           setIsSplitReaderOpen(true);
-                          showToast(t.toastCopied);
                         }}
                         className="px-2 py-1 text-[10px] font-bold text-amber-900 hover:bg-amber-100/60 rounded cursor-pointer"
                       >
@@ -1768,11 +1919,628 @@ export default function App() {
             </div>
           )}
 
+          {/* TAB 9: CURRICULUM DESIGN WORKBENCH (KHUNG CHƯƠNG TRÌNH) */}
+          {currentTab === "scheduler" && (
+            <div className="max-w-5xl mx-auto h-full space-y-6 animate-fade-in font-sans">
+              
+              {/* Parameter Settings Bar */}
+              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h2 className="text-sm font-bold text-gray-900">
+                    {language === "vi" ? "Thiết kế Khung chương trình học thuật" : "Curriculum Framework Design Workbench"}
+                  </h2>
+                  <p className="text-xs text-gray-550">
+                    {language === "vi" 
+                      ? "Xác định các chủ đề học thuật lớn, phân bổ số tiết định biên (3 tiết/tuần) và ánh xạ các chuẩn Cambridge cùng TWS."
+                      : "Define major curriculum units, allocate yearly period budgets, and map Cambridge objectives and TWS focus."}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4 text-xs">
+                  {/* Total weeks parameter */}
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gray-600">{language === "vi" ? "Số tuần học:" : "Total Weeks:"}</span>
+                    <input 
+                      type="number" 
+                      min={10} 
+                      max={45} 
+                      value={totalWeeks}
+                      onChange={(e) => setTotalWeeks(Number(e.target.value))}
+                      className="w-14 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-center font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Periods per week parameter */}
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gray-600">{language === "vi" ? "Số tiết/tuần:" : "Periods/Week:"}</span>
+                    <input 
+                      type="number" 
+                      min={1} 
+                      max={10} 
+                      value={periodsPerWeek}
+                      onChange={(e) => setPeriodsPerWeek(Number(e.target.value))}
+                      className="w-12 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-center font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Run Button */}
+                  <button
+                    onClick={handleAuditFramework}
+                    disabled={isAuditingFramework}
+                    className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 disabled:bg-gray-150 disabled:text-gray-400 transition-all cursor-pointer shadow-sm"
+                  >
+                    {isAuditingFramework ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>{language === "vi" ? "AI đang thẩm định..." : "AI Auditing..."}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                        <span>{language === "vi" ? "AI Thẩm định Khung" : "AI Audit Framework"}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Summary Stats Cards */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-gray-400 uppercase block font-mono">{language === "vi" ? "Tổng số chủ đề" : "Topics count"}</span>
+                    <span className="text-sm font-bold text-gray-800">{frameworkTopics.length} chủ đề</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center shrink-0">
+                    <CheckCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-gray-400 uppercase block font-mono">{language === "vi" ? "Số tiết đã phân bổ" : "Allocated periods"}</span>
+                    <span className="text-sm font-bold text-gray-800">
+                      {frameworkTopics.reduce((acc, t) => acc + t.allocatedPeriods, 0)} tiết
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+                  <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-500 flex items-center justify-center shrink-0">
+                    <Database className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-gray-400 uppercase block font-mono">{language === "vi" ? "Quỹ tiết năm học" : "Year Period Budget"}</span>
+                    <span className="text-sm font-bold text-gray-800">{totalWeeks * periodsPerWeek} tiết</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+                  <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-500 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-gray-400 uppercase block font-mono">{language === "vi" ? "Quỹ tiết dư" : "Buffer periods"}</span>
+                    <span className="text-sm font-bold text-gray-800">
+                      {totalWeeks * periodsPerWeek - frameworkTopics.reduce((acc, t) => acc + t.allocatedPeriods, 0)} tiết
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Two Column Layout: Editor & AI Inspector */}
+              <div className="grid grid-cols-12 gap-6 items-start">
+                
+                {/* Left Column: Topics List & Editor (5/12 cols) */}
+                <div className="col-span-5 space-y-4">
+                  <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4.5 space-y-4">
+                    <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                      <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider font-mono">
+                        {language === "vi" ? "Danh sách Chủ đề Khung" : "Framework Units List"}
+                      </h3>
+                      <button
+                        onClick={() => {
+                          const newId = `topic_${Date.now()}`;
+                          const newTopic = {
+                            id: newId,
+                            name: "New Curriculum Topic",
+                            nameVi: "Chủ đề học thuật mới",
+                            allocatedPeriods: 10,
+                            mappedStandardCodes: [],
+                            twsFocus: []
+                          };
+                          setFrameworkTopics(prev => [...prev, newTopic]);
+                          setActiveFrameworkTopicId(newId);
+                        }}
+                        className="px-2 py-1 text-[10px] font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>{language === "vi" ? "Thêm" : "Add"}</span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                      {frameworkTopics.map((topic) => (
+                        <div 
+                          key={topic.id}
+                          onClick={() => setActiveFrameworkTopicId(topic.id)}
+                          className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                            activeFrameworkTopicId === topic.id
+                              ? "bg-amber-50 text-amber-900 border-amber-300 shadow-sm"
+                              : "bg-gray-55/60 border-gray-150 hover:bg-gray-100/50 text-gray-700"
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <span className="text-xs font-bold leading-snug">
+                              {language === "vi" ? topic.nameVi : topic.name}
+                            </span>
+                            <span className="px-1.5 py-0.5 bg-white/80 border border-amber-250/30 text-[9px] font-mono font-bold rounded shrink-0">
+                              {topic.allocatedPeriods} tiết
+                            </span>
+                          </div>
+                          
+                          <div className="flex flex-wrap gap-1 mt-2.5">
+                            {topic.mappedStandardCodes.length === 0 ? (
+                              <span className="text-[9px] text-gray-400 italic">Chưa liên kết chuẩn</span>
+                            ) : (
+                              topic.mappedStandardCodes.map((code: string) => (
+                                <span key={code} className="px-1 py-0.2 bg-white/70 border border-gray-200 text-[8px] font-mono text-gray-500 rounded">
+                                  {code}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Active Topic Editor Card */}
+                  {(() => {
+                    const activeTopic = frameworkTopics.find(t => t.id === activeFrameworkTopicId);
+                    if (!activeTopic) return null;
+                    return (
+                      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4.5 space-y-3.5">
+                        <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider font-mono">
+                          {language === "vi" ? "Chỉnh sửa Chủ đề đang chọn" : "Edit Active Topic"}
+                        </h4>
+
+                        {/* Title input */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase">
+                            {language === "vi" ? "Tên Chủ đề (Tiếng Việt)" : "Topic Title (Vietnamese)"}
+                          </label>
+                          <input 
+                            type="text"
+                            value={activeTopic.nameVi}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setFrameworkTopics(prev => prev.map(t => t.id === activeTopic.id ? { ...t, nameVi: val } : t));
+                            }}
+                            className="w-full bg-gray-55 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          />
+                        </div>
+
+                        {/* Allocated periods slider */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase">
+                              {language === "vi" ? "Số tiết phân bổ" : "Allocated Periods"}
+                            </label>
+                            <span className="text-xs font-bold text-amber-900 font-mono bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              {activeTopic.allocatedPeriods} tiết
+                            </span>
+                          </div>
+                          <input 
+                            type="range"
+                            min={2}
+                            max={40}
+                            value={activeTopic.allocatedPeriods}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setFrameworkTopics(prev => prev.map(t => t.id === activeTopic.id ? { ...t, allocatedPeriods: val } : t));
+                            }}
+                            className="w-full accent-amber-500 cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Delete topic button */}
+                        <button
+                          onClick={() => {
+                            if (frameworkTopics.length <= 1) {
+                              showToast(language === "vi" ? "Cần giữ lại ít nhất 1 chủ đề!" : "Must keep at least 1 topic!");
+                              return;
+                            }
+                            const updated = frameworkTopics.filter(t => t.id !== activeTopic.id);
+                            setFrameworkTopics(updated);
+                            setActiveFrameworkTopicId(updated[0].id);
+                          }}
+                          className="w-full py-1.5 border border-red-200 text-red-700 bg-red-50/20 hover:bg-red-50 hover:text-red-800 text-[10px] font-bold rounded-lg transition-colors cursor-pointer text-center"
+                        >
+                          {language === "vi" ? "Xóa chủ đề này" : "Delete this Topic"}
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Right Column: AI Audit & Standards Pool Mapping (7/12 cols) */}
+                <div className="col-span-7 space-y-4">
+                  
+                  {/* Standards Mapper Board */}
+                  {(() => {
+                    const activeTopic = frameworkTopics.find(t => t.id === activeFrameworkTopicId);
+                    if (!activeTopic) return null;
+                    return (
+                      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 space-y-4">
+                        <div className="space-y-1">
+                          <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider font-mono">
+                            {language === "vi" ? "Kho chuẩn Cambridge & Tích hợp TWS" : "Cambridge Standards & TWS Mapper"}
+                          </h3>
+                          <p className="text-[10px] text-gray-550">
+                            {language === "vi" 
+                              ? `Đánh dấu tích để gán các chuẩn học thuật Cambridge cho: ${activeTopic.nameVi}`
+                              : `Select standards to allocate to: ${activeTopic.name}`}
+                          </p>
+                        </div>
+
+                        {/* Standards checkbox grid */}
+                        <div className="border border-gray-100 rounded-xl p-3 bg-gray-50/50 space-y-3.5 max-h-[250px] overflow-y-auto">
+                          
+                          {/* Biology Standards */}
+                          <div className="space-y-1.5">
+                            <span className="text-[9px] font-bold text-gray-400 font-mono block uppercase">Sinh học (Biology)</span>
+                            <div className="grid grid-cols-3 gap-2">
+                              {standards.filter(s => s.strand === "Biology").map(s => {
+                                const isMapped = activeTopic.mappedStandardCodes.includes(s.code);
+                                return (
+                                  <button
+                                    key={s.code}
+                                    onClick={() => {
+                                      const updatedCodes = isMapped
+                                        ? activeTopic.mappedStandardCodes.filter((c: string) => c !== s.code)
+                                        : [...activeTopic.mappedStandardCodes, s.code];
+                                      setFrameworkTopics(prev => prev.map(t => t.id === activeTopic.id ? { ...t, mappedStandardCodes: updatedCodes } : t));
+                                    }}
+                                    className={`p-1.5 rounded-lg border text-left text-[10px] transition-all cursor-pointer flex items-center justify-between gap-1 ${
+                                      isMapped 
+                                        ? "bg-amber-50 text-amber-900 border-amber-300 font-bold" 
+                                        : "bg-white text-gray-500 border-gray-200 hover:border-amber-200"
+                                    }`}
+                                    title={s.description}
+                                  >
+                                    <span className="truncate">{s.code}</span>
+                                    <span className="text-[8px] font-normal opacity-70 shrink-0">{isMapped ? "✔" : "+"}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Chemistry & Physics Standards */}
+                          <div className="space-y-1.5">
+                            <span className="text-[9px] font-bold text-gray-400 font-mono block uppercase">Hóa học & Vật lý (Chemistry & Physics)</span>
+                            <div className="grid grid-cols-3 gap-2">
+                              {standards.filter(s => s.strand === "Chemistry" || s.strand === "Physics").map(s => {
+                                const isMapped = activeTopic.mappedStandardCodes.includes(s.code);
+                                return (
+                                  <button
+                                    key={s.code}
+                                    onClick={() => {
+                                      const updatedCodes = isMapped
+                                        ? activeTopic.mappedStandardCodes.filter((c: string) => c !== s.code)
+                                        : [...activeTopic.mappedStandardCodes, s.code];
+                                      setFrameworkTopics(prev => prev.map(t => t.id === activeTopic.id ? { ...t, mappedStandardCodes: updatedCodes } : t));
+                                    }}
+                                    className={`p-1.5 rounded-lg border text-left text-[10px] transition-all cursor-pointer flex items-center justify-between gap-1 ${
+                                      isMapped 
+                                        ? "bg-amber-50 text-amber-900 border-amber-300 font-bold" 
+                                        : "bg-white text-gray-500 border-gray-200 hover:border-amber-200"
+                                    }`}
+                                    title={s.description}
+                                  >
+                                    <span className="truncate">{s.code}</span>
+                                    <span className="text-[8px] font-normal opacity-70 shrink-0">{isMapped ? "✔" : "+"}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* TWS Skills Checkboxes */}
+                          <div className="space-y-1.5">
+                            <span className="text-[9px] font-bold text-gray-400 font-mono block uppercase">Tích hợp Tư duy & Làm việc Khoa học (TWS)</span>
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { code: "5TWSm.01", desc: "Trình bày mô hình cốt lõi" },
+                                { code: "5TWSm.02", desc: "Sử dụng sơ đồ/mô hình" },
+                                { code: "5TWSp.03", desc: "Đưa ra dự đoán khoa học" },
+                                { code: "5TWSc.08", desc: "Thu thập ghi chép bằng bảng" },
+                                { code: "5TWSa.01", desc: "Đánh giá dự đoán khoa học" },
+                                { code: "5TWSa.05", desc: "Vẽ biểu đồ biểu diễn số liệu" }
+                              ].map(s => {
+                                const isMapped = activeTopic.twsFocus.includes(s.code);
+                                return (
+                                  <button
+                                    key={s.code}
+                                    onClick={() => {
+                                      const updatedTWS = isMapped
+                                        ? activeTopic.twsFocus.filter((c: string) => c !== s.code)
+                                        : [...activeTopic.twsFocus, s.code];
+                                      setFrameworkTopics(prev => prev.map(t => t.id === activeTopic.id ? { ...t, twsFocus: updatedTWS } : t));
+                                    }}
+                                    className={`p-1.5 rounded-lg border text-left text-[10px] transition-all cursor-pointer flex items-center justify-between gap-1 ${
+                                      isMapped 
+                                        ? "bg-sky-50 text-sky-900 border-sky-300 font-bold" 
+                                        : "bg-white text-gray-500 border-gray-200 hover:border-sky-200"
+                                    }`}
+                                    title={s.desc}
+                                  >
+                                    <span className="truncate">{s.code}</span>
+                                    <span className="text-[8px] font-normal opacity-70 shrink-0">{isMapped ? "✔" : "+"}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* AI Framework Audit Display Panel */}
+                  {isAuditingFramework ? (
+                    <div className="bg-white border border-gray-200 rounded-2xl p-8 flex flex-col items-center justify-center text-center shadow-sm">
+                      <RefreshCw className="w-10 h-10 text-amber-500 animate-spin mb-3" />
+                      <h4 className="text-xs font-bold text-gray-700">{language === "vi" ? "AI đang đánh giá cân bằng số tiết và chuẩn..." : "AI Auditing Framework Balance..."}</h4>
+                      <p className="text-[10px] text-gray-400 mt-1 max-w-sm">
+                        Gemini đang kiểm tra mức độ phủ sóng của chuẩn Cambridge, mật độ phân phối số tiết (periods) và phân phối kỹ năng TWS theo chuẩn Vinschool.
+                      </p>
+                    </div>
+                  ) : frameworkAuditResult ? (
+                    <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm space-y-4 select-text">
+                      <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider font-mono border-b border-gray-100 pb-2 flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-amber-500" />
+                        {language === "vi" ? "KẾT QUẢ KIỂM ĐỊNH KHUNG CHƯƠNG TRÌNH AI" : "AI FRAMEWORK DESIGN AUDIT REPORT"}
+                      </h3>
+
+                      <div className="space-y-3.5 text-xs text-gray-700 leading-relaxed">
+                        
+                        {/* Period Balance Analysis */}
+                        <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100/60">
+                          <span className="font-bold text-amber-900 block font-mono text-[9px] uppercase mb-1">CÂN ĐỐI QUỸ THỜI GIAN (PERIOD BALANCE AUDIT)</span>
+                          <p>{frameworkAuditResult.periodBalanceAudit}</p>
+                        </div>
+
+                        {/* Standards Coverage Analysis */}
+                        <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100/60 text-emerald-950">
+                          <span className="font-bold text-emerald-900 block font-mono text-[9px] uppercase mb-1">MỨC ĐỘ PHỦ CHUẨN CAMBRIDGE (STANDARDS COVERAGE)</span>
+                          <p>{frameworkAuditResult.coverageAudit}</p>
+                        </div>
+
+                        {/* TWS pedagogical advice */}
+                        <div className="bg-sky-55/60 p-3 rounded-xl border border-sky-100 text-sky-955">
+                          <span className="font-bold text-sky-900 block font-mono text-[9px] uppercase mb-1">TÍCH HỢP TƯ DUY TWS (TWS INTEGRATION ADVICE)</span>
+                          <p>{frameworkAuditResult.twsMappingAdvice}</p>
+                        </div>
+
+                        {/* Suggested Adjustments */}
+                        {frameworkAuditResult.suggestedAdjustments && frameworkAuditResult.suggestedAdjustments.length > 0 && (
+                          <div className="space-y-2">
+                            <span className="font-bold text-gray-500 block font-mono text-[9px] uppercase">HÀNH ĐỘNG ĐỀ XUẤT CHO VIẾT CHƯƠNG TRÌNH (RECOMMENDED ACTIONS)</span>
+                            <div className="space-y-2">
+                              {frameworkAuditResult.suggestedAdjustments.map((adj: any, aIdx: number) => (
+                                <div key={aIdx} className="bg-white border border-gray-150 p-3 rounded-xl flex gap-2">
+                                  <span className="px-2 py-0.5 bg-[#18181b] text-white rounded font-mono text-[8px] font-bold h-fit shrink-0 uppercase">
+                                    {adj.action}
+                                  </span>
+                                  <div>
+                                    <span className="font-bold text-gray-800 text-[11px] block">{adj.topicName}</span>
+                                    <p className="text-[10px] text-gray-500 mt-0.5 leading-relaxed">{adj.details}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white border border-gray-200 rounded-2xl p-8 flex flex-col items-center justify-center text-center shadow-sm">
+                      <Sparkles className="w-10 h-10 text-amber-500 mb-3 animate-pulse" />
+                      <h4 className="text-xs font-bold text-gray-700">{language === "vi" ? "Thẩm định thiết kế khung bằng AI" : "AI Design Validator"}</h4>
+                      <p className="text-[10px] text-gray-550 mt-1 max-w-sm">
+                        Thiết lập các chủ đề ở cột trái, liên kết chuẩn Cambridge tương ứng, sau đó bấm **"AI Thẩm định Khung"** ở trên để kiểm tra thiết kế của bạn có bị khoảng trống kiến thức hay thiếu quỹ thời gian không.
+                      </p>
+                    </div>
+                  )}
+
+                </div>
+
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 10: STUDENT REMEDIATION & INTERVENTION PLANNER */}
+          {currentTab === "remediation" && (
+            <div className="max-w-5xl mx-auto h-full grid grid-cols-12 gap-6 items-start font-sans animate-fade-in">
+              
+              {/* Left Column: Diagnostic input (4/12 cols) */}
+              <div className="col-span-4 space-y-4">
+                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5 space-y-4">
+                  <div className="space-y-1">
+                    <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider font-mono">
+                      {language === "vi" ? "Báo cáo Đánh giá Học sinh" : "Diagnostic Assessment Input"}
+                    </h3>
+                    <p className="text-[10px] text-gray-550">
+                      {language === "vi"
+                        ? "Dán nhận xét bài thi, kết quả khảo sát định kỳ hoặc thống kê chuẩn học sinh còn yếu."
+                        : "Paste assessment reports, mock test analytics, or class performance comments."}
+                    </p>
+                  </div>
+
+                  {/* Diagnostic report input */}
+                  <textarea
+                    value={diagnosticReport}
+                    onChange={(e) => setDiagnosticReport(e.target.value)}
+                    required
+                    rows={8}
+                    placeholder="Paste diagnostic observations here..."
+                    className="w-full bg-gray-55 border border-gray-200 rounded-xl p-3 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none font-sans"
+                  />
+
+                  {/* Run analysis button */}
+                  <button
+                    onClick={handleGenerateRemediation}
+                    disabled={isAnalyzingRemediation || !diagnosticReport.trim()}
+                    className="w-full py-2.5 bg-[#18181b] hover:bg-[#27272a] disabled:bg-gray-150 disabled:text-gray-400 text-white text-xs font-bold rounded-xl shadow transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {isAnalyzingRemediation ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>{language === "vi" ? "AI đang lập phương án..." : "AI Planning..."}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                        <span>{language === "vi" ? "Phân tích & Lập câu hỏi" : "Analyze & Design Intervention"}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Right Column: Remediation result output (8/12 cols) */}
+              <div className="col-span-8 space-y-4">
+                
+                {isAnalyzingRemediation ? (
+                  <div className="bg-white border border-gray-200 rounded-3xl p-16 flex flex-col items-center justify-center text-center shadow-sm">
+                    <RefreshCw className="w-12 h-12 text-amber-500 animate-spin mb-4" />
+                    <h4 className="text-sm font-bold text-gray-700">
+                      {language === "vi" ? "AI đang lập kế hoạch can thiệp học thuật..." : "AI Building Remediation Plan..."}
+                    </h4>
+                    <p className="text-xs text-gray-400 mt-1 max-w-md leading-relaxed">
+                      AI đang phân tích các lỗi sai/điểm yếu của học sinh, tự động định vị các bài dạy trong chương trình và thiết kế câu hỏi chất vấn định hướng "Làm sao ta biết chắc chắn".
+                    </p>
+                  </div>
+                ) : remediationResult ? (
+                  <div className="space-y-6 select-text">
+                    
+                    {/* Overall intervention strategy */}
+                    <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm space-y-2">
+                      <span className="text-[9px] font-bold text-gray-400 font-mono block uppercase">CHIẾN LƯỢC CAN THIỆP TỔNG QUAN (OVERALL INTERVENTION STRATEGY)</span>
+                      <p className="text-xs text-gray-700 leading-relaxed">
+                        {remediationResult.overallInterventionStrategy}
+                      </p>
+                    </div>
+
+                    {/* Identified Weaknesses list */}
+                    <div className="space-y-4">
+                      {remediationResult.identifiedWeaknesses.map((weakness: any, wIdx: number) => (
+                        <div key={wIdx} className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm space-y-4 relative overflow-hidden">
+                          
+                          {/* Accent line */}
+                          <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500" />
+                          
+                          <div className="flex justify-between items-start font-mono pl-2">
+                            <div className="space-y-1">
+                              <span className="px-2 py-0.5 bg-red-600 text-white rounded font-mono text-[9px] font-bold">
+                                {weakness.standardCode}
+                              </span>
+                              <span className="text-[10px] text-gray-800 font-semibold block font-sans">
+                                {weakness.standardDesc}
+                              </span>
+                            </div>
+                            <span className="text-[9px] tracking-wider text-red-500 font-bold uppercase shrink-0">
+                              {language === "vi" ? "Khuyết kỹ năng" : "Weakness Identified"}
+                            </span>
+                          </div>
+
+                          {/* Detail fields */}
+                          <div className="text-xs space-y-3.5 pl-2">
+                            
+                            {/* Reason for failure */}
+                            <div className="text-gray-700 bg-red-50/20 border border-red-100/50 p-3 rounded-xl">
+                              <span className="font-bold text-red-900 block font-mono text-[9px] uppercase mb-1">NGUYÊN NHÂN GÂY LỖI / YẾU (DIAGNOSTIC ANALYSIS)</span>
+                              {weakness.reason}
+                            </div>
+
+                            {/* Target lessons */}
+                            <div className="flex gap-2 items-center">
+                              <span className="font-bold text-gray-500 font-mono text-[9px] uppercase">{language === "vi" ? "ĐỊNH VỊ BÀI DẠY:" : "TARGET LESSONS:"}</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {weakness.targetLessons.map((lesId: string, lIdx: number) => {
+                                  const targetL = lessons.find(l => l.id === lesId || l.title === lesId);
+                                  return (
+                                    <span key={lIdx} className="px-2 py-0.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[9px] font-semibold">
+                                      {targetL ? (language === "vi" ? targetL.titleVi || targetL.title : targetL.title) : lesId}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <hr className="border-gray-100" />
+
+                            {/* Thinking Question */}
+                            <div className="bg-amber-50/30 border border-amber-100 rounded-xl p-4 space-y-2">
+                              <span className="font-bold text-amber-900 block font-mono text-[9px] uppercase">CÂU HỎI TƯ DUY KHẮC PHỤC (HOW DO WE KNOW REMEDIATION QUESTION)</span>
+                              <p className="font-bold text-gray-800 text-xs font-serif leading-relaxed italic">
+                                "{weakness.remediationQuestion}"
+                              </p>
+                              <div className="text-[10px] text-gray-500 mt-2 font-sans pt-1 border-t border-amber-150/40">
+                                <span className="font-bold uppercase font-mono block text-[8px] text-amber-900 mb-0.5">Tiêu chí câu trả lời mong đợi (Expected Answer):</span>
+                                {weakness.expectedAnswerGuide}
+                              </div>
+                            </div>
+
+                            {/* Teacher exploitation guide */}
+                            <div className="bg-sky-50/30 border border-sky-100 rounded-xl p-4 space-y-2">
+                              <span className="font-bold text-sky-900 block font-mono text-[9px] uppercase">ĐỊNH HƯỚNG SƯ PHẠM CHO GIÁO VIÊN KHAI THÁC (TEACHER REMEDIATION GUIDE)</span>
+                              <p className="text-gray-700 leading-relaxed font-sans">
+                                {weakness.teacherExploitationGuide}
+                              </p>
+                            </div>
+
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                  </div>
+                ) : (
+                  <div className="bg-white border border-gray-200 rounded-3xl p-16 flex flex-col items-center justify-center text-center shadow-sm">
+                    <GraduationCap className="w-12 h-12 text-gray-300 stroke-1 mb-3 animate-pulse" />
+                    <h4 className="text-sm font-bold text-gray-700">
+                      {language === "vi" ? "Sẵn sàng lập kế hoạch can thiệp học thuật" : "Student Intervention Planner Ready"}
+                    </h4>
+                    <p className="text-xs text-gray-550 mt-1 max-w-sm">
+                      {language === "vi"
+                        ? "Dán kết quả khảo sát định kỳ hoặc nhận xét học sinh vào ô bên trái, sau đó bấm 'Phân tích & Lập câu hỏi' để AI thiết kế tài liệu can thiệp."
+                        : "Enter diagnostic student performance metrics at the left, then click 'Analyze' to design targeted interventions."}
+                    </p>
+                  </div>
+                )}
+
+              </div>
+
+            </div>
+          )}
+
         </div>
 
         {/* Global Footer Credits */}
         <footer className="h-9 border-t border-gray-100 bg-white px-6 flex items-center justify-between text-[10px] text-gray-400 font-mono shrink-0 select-none">
           <span>{t.footerBranding}</span>
+          <span className="font-semibold text-gray-500">
+            {language === "vi" ? "Được phát triển bởi Ms.Ngọc Mai" : "Developed by Ms.Ngọc Mai"}
+          </span>
           <span className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-ping" />
             {t.stateOperational}
@@ -1787,6 +2555,8 @@ export default function App() {
         isOpen={isSplitReaderOpen}
         onClose={() => setIsSplitReaderOpen(false)}
         language={language}
+        selectedDocId={selectedDocIdReader}
+        setSelectedDocId={setSelectedDocIdReader}
       />
 
       {/* Floating Contextual AI Assistant Panel */}
@@ -1891,6 +2661,102 @@ export default function App() {
                 {t.btnSaveSettings}
               </button>
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Import Lesson Modal */}
+      {showImportLessonModal && (
+        <div className="fixed inset-0 z-50 bg-[#18181b]/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-3xl max-w-xl w-full shadow-2xl p-6 space-y-5 flex flex-col font-sans">
+            
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-amber-50 text-amber-500 border border-amber-200 rounded-xl flex items-center justify-center shrink-0">
+                  <Sparkles className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 leading-snug">{t.importLessonTitle}</h3>
+                  <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wide mt-0.5 font-sans">Vinschool Science Co-pilot</p>
+                </div>
+              </div>
+              
+              <button 
+                onClick={() => { setShowImportLessonModal(false); setImportLessonError(null); }}
+                className="text-gray-400 hover:text-gray-600 text-xs font-bold px-2 py-1 rounded hover:bg-gray-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-600 leading-relaxed font-sans">
+              {t.importLessonInstructions}
+            </p>
+
+            {isImportingLesson ? (
+              <div className="py-12 flex flex-col items-center justify-center font-sans">
+                <RefreshCw className="w-10 h-10 text-amber-500 animate-spin mb-4" />
+                <p className="text-xs font-semibold text-gray-700">{t.importingLesson}</p>
+                <p className="text-[10px] text-gray-400 mt-1 font-mono">Calling Gemini Structural Extraction</p>
+              </div>
+            ) : (
+              <div className="space-y-4 font-sans">
+                
+                {/* File Import Drag Zone */}
+                <label className="border border-dashed border-gray-300 hover:border-amber-500 rounded-xl p-6 flex flex-col items-center justify-center bg-gray-50/50 hover:bg-amber-50/5 transition-all relative cursor-pointer">
+                  <UploadCloud className="w-8 h-8 text-gray-400 mb-2 stroke-1.5" />
+                  <span className="text-xs font-semibold text-gray-700">Tải lên tệp giáo án (.docx, .pdf, .txt)</span>
+                  <input 
+                    type="file" 
+                    accept=".pdf,.docx,.doc,.txt"
+                    onChange={handleImportLessonFile}
+                    className="hidden"
+                  />
+                </label>
+
+                <div className="text-center text-[10px] font-bold text-gray-400 uppercase font-mono">— {language === "vi" ? "HOẶC DÁN VĂN BẢN THÔ" : "OR PASTE RAW TEXT"} —</div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase font-mono">{t.labelPasteLesson}</label>
+                  <textarea
+                    placeholder="Dán nội dung giáo án (Ví dụ bao gồm: tên bài học, thời lượng, mục tiêu bài học, chuỗi hoạt động)..."
+                    value={importLessonText}
+                    onChange={(e) => setImportLessonText(e.target.value)}
+                    className="w-full h-40 bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-xs text-gray-700 placeholder-gray-400 resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                {importLessonError && (
+                  <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex gap-2 items-start text-xs text-red-800">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">{language === "vi" ? "Lỗi nhập giáo án" : "Import Failed"}</p>
+                      <p className="text-[10px] text-red-700/80 mt-0.5">{importLessonError}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowImportLessonModal(false); setImportLessonError(null); }}
+                    className="px-4 py-2 border border-gray-200 text-gray-700 text-xs font-semibold rounded-xl hover:bg-gray-50 cursor-pointer"
+                  >
+                    {language === "vi" ? "Hủy" : "Cancel"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => performLessonTextImport(importLessonText)}
+                    disabled={!importLessonText.trim()}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-150 disabled:text-gray-400 text-white text-xs font-bold rounded-xl shadow cursor-pointer"
+                  >
+                    {t.btnImportText}
+                  </button>
+                </div>
+
+              </div>
+            )}
 
           </div>
         </div>

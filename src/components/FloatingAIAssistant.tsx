@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChatMessage, LessonPlan, CambridgeStandard, UploadedDocument } from "../types";
-import { Sparkles, MessageSquare, Send, X, AlertTriangle, HelpCircle } from "lucide-react";
+import { Sparkles, MessageSquare, Send, X, AlertTriangle, HelpCircle, Bot } from "lucide-react";
 import { TRANSLATIONS } from "../translations";
 import { chatSpecialistAI } from "../geminiService";
 
@@ -112,26 +112,33 @@ export default function FloatingAIAssistant({
       <button
         onClick={onToggle}
         id="btn-open-assistant"
-        className="fixed bottom-6 right-6 z-40 bg-[#18181b] hover:bg-[#27272a] text-white shadow-xl rounded-full p-4 flex items-center gap-2.5 border border-[#3f3f46] group transition-all duration-300"
+        className="fixed bottom-6 right-6 z-40 bg-gradient-to-tr from-[#18181b] to-[#27272a] hover:from-[#27272a] hover:to-[#3f3f46] text-white shadow-2xl rounded-full p-2 flex items-center gap-2.5 border border-amber-500/30 hover:border-amber-400 transition-all duration-300 relative group scale-105"
       >
-        <Sparkles className="w-5 h-5 text-amber-400 group-hover:scale-110 transition-transform" />
-        <span className="text-xs font-semibold tracking-wide pr-1">AI Coprocessor</span>
+        {/* Pulsing glow ring */}
+        <span className="absolute inset-0 rounded-full bg-amber-500/20 animate-ping opacity-75 pointer-events-none" />
+        
+        <img 
+          src="/robot_avatar.png" 
+          alt="Robot AI avatar" 
+          className="w-8 h-8 rounded-full border border-amber-400/50 group-hover:scale-110 group-hover:rotate-6 transition-all object-cover"
+        />
+        <span className="text-xs font-bold tracking-wide pr-2">AI Coprocessor</span>
       </button>
     );
   }
 
   return (
     <div 
-      className="fixed bottom-6 right-6 z-40 w-96 h-128 bg-white border border-gray-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden font-sans"
+      className="fixed bottom-6 right-6 z-40 w-96 h-128 bg-white border border-gray-200 rounded-3xl shadow-2xl flex flex-col overflow-hidden font-sans border-t-4 border-t-amber-500"
     >
       {/* Header Banner */}
-      <div className="bg-[#18181b] p-4 border-b border-[#27272a] text-white flex items-center justify-between">
+      <div className="bg-[#18181b] p-4 border-b border-[#27272a] text-white flex items-center justify-between shadow-md">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-amber-400" />
+          <div className="w-8 h-8 rounded-full border border-amber-500/40 overflow-hidden bg-white/10 flex items-center justify-center shrink-0">
+            <img src="/robot_avatar.png" alt="Robot avatar" className="w-full h-full object-cover" />
           </div>
           <div>
-            <h3 className="text-xs font-semibold tracking-wide text-white leading-none">
+            <h3 className="text-xs font-bold tracking-wide text-white leading-none">
               {language === "vi" ? "Trợ lý học thuật AI" : "AI Curriculum Specialist"}
             </h3>
             <span className="text-[9px] text-gray-400 font-mono mt-1 block uppercase tracking-wider">
@@ -141,7 +148,7 @@ export default function FloatingAIAssistant({
         </div>
         <button 
           onClick={onToggle}
-          className="p-1 hover:bg-[#27272a] rounded text-gray-400 hover:text-white transition-colors"
+          className="p-1.5 hover:bg-[#27272a] rounded-lg text-gray-400 hover:text-white transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -166,24 +173,35 @@ export default function FloatingAIAssistant({
       )}
 
       {/* Messages Feed */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-gray-50/50 select-text">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50 select-text">
         {messages.map((m) => (
           <div
             key={m.id}
-            className={`flex flex-col ${m.sender === "user" ? "items-end" : "items-start"}`}
+            className={`flex gap-2.5 ${m.sender === "user" ? "flex-row-reverse" : "flex-row"}`}
           >
-            <div
-              className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed shadow-sm ${
-                m.sender === "user"
-                  ? "bg-[#18181b] text-white rounded-br-none font-medium"
-                  : "bg-white text-gray-800 border border-gray-100 rounded-bl-none"
-              }`}
-            >
-              <p className="whitespace-pre-wrap">{m.text}</p>
+            {/* Avatar icon */}
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 overflow-hidden border ${
+              m.sender === "user"
+                ? "bg-gray-100 border-gray-250 text-gray-700 text-[10px] font-bold"
+                : "bg-white border-amber-500/20"
+            }`}>
+              {m.sender === "user" ? "U" : <img src="/robot_avatar.png" alt="Bot avatar" className="w-full h-full object-cover" />}
             </div>
-            <span className="text-[9px] text-gray-400 mt-1 font-mono px-1">
-              {m.timestamp}
-            </span>
+
+            <div className={`flex flex-col ${m.sender === "user" ? "items-end" : "items-start"}`}>
+              <div
+                className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed shadow-sm ${
+                  m.sender === "user"
+                    ? "bg-[#18181b] text-white rounded-tr-none font-medium"
+                    : "bg-white text-gray-800 border border-gray-150/40 rounded-tl-none"
+                }`}
+              >
+                <p className="whitespace-pre-wrap font-sans">{m.text}</p>
+              </div>
+              <span className="text-[8px] text-gray-400 mt-1 font-mono px-1">
+                {m.timestamp}
+              </span>
+            </div>
           </div>
         ))}
 
