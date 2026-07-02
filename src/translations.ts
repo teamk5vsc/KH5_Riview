@@ -140,7 +140,7 @@ export const TRANSLATIONS = {
     docsSubtitle: "Sách giáo khoa Cambridge, khung chương trình và các hướng dẫn nội bộ.",
     btnReadPanel: "Đọc tài liệu",
     docIngestCenter: "Trung tâm nạp dữ liệu tri thức",
-    docIngestDesc: "Dán nội dung sách, khung chuẩn hoặc tài liệu hướng dẫn mới để AI tham chiếu thông tin chính xác.",
+    docIngestDesc: "Tải lên tệp tài liệu (PDF, Word, Excel, CSV, Text) hoặc nhập văn bản thủ công để làm phong phú kho tri thức rà soát của AI.",
     fileName: "Tên tài liệu",
     docFormat: "Định dạng tài liệu",
     docFormatPdf: "PDF (Sách Cambridge)",
@@ -149,7 +149,7 @@ export const TRANSLATIONS = {
     extractedTextLabel: "Nội dung văn bản trích xuất",
     btnSimulateUpload: "Tải lên & Nạp vào AI",
     uploadSuccess: "Đã nạp thành công tài liệu: {name}!",
-    uploadError: "Lỗi phân tích tài liệu.",
+    uploadError: "Lỗi phân tích tệp tài liệu.",
 
     // Split Reader
     readerTitle: "Trình đọc tài liệu tham chiếu",
@@ -162,6 +162,13 @@ export const TRANSLATIONS = {
     modelFailed: "Thử model {model} thất bại. Đang chuyển model tiếp theo...",
     modelSuccess: "Đã hoàn thành bằng model {model}!",
     stopWithError: "Đã dừng do lỗi API",
+
+    // File Upload additions
+    labelDragDrop: "Kéo thả file vào đây hoặc click để chọn tệp",
+    labelSupportedFormats: "Hỗ trợ tệp lớn: PDF, DOCX, XLSX, CSV, TXT, MD, JSON",
+    labelParsingFile: "Đang trích xuất văn bản từ tệp tin...",
+    labelManualIngest: "Nhập văn bản thủ công",
+    labelFileUploadIngest: "Tải tệp tài liệu trực tiếp (Mọi định dạng)",
   },
   en: {
     // Header & Global
@@ -304,7 +311,7 @@ export const TRANSLATIONS = {
     docsSubtitle: "Syllabus books, spreadsheets, and curriculum alignment guidance files.",
     btnReadPanel: "Read Panel",
     docIngestCenter: "Custom Knowledge Ingest Center",
-    docIngestDesc: "Paste custom Science syllabus frameworks or book references below to ground AI coprocessor reasoning.",
+    docIngestDesc: "Upload document files (PDF, Word, Excel, CSV, Text) or input text manually to enrich the AI review knowledge base.",
     fileName: "File Name",
     docFormat: "Document Format Type",
     docFormatPdf: "PDF (Cambridge Science Book)",
@@ -326,5 +333,12 @@ export const TRANSLATIONS = {
     modelFailed: "Model {model} failed. Trying next model...",
     modelSuccess: "Completed successfully using {model}!",
     stopWithError: "Stopped due to API Error",
+
+    // File Upload additions
+    labelDragDrop: "Drag & drop files here or click to select",
+    labelSupportedFormats: "Supports large files: PDF, DOCX, XLSX, CSV, TXT, MD, JSON",
+    labelParsingFile: "Extracting text content from file...",
+    labelManualIngest: "Manual Text Entry",
+    labelFileUploadIngest: "Upload Document File (All Formats)",
   }
 };

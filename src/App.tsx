@@ -25,12 +25,10 @@ import {
   Settings,
   Globe,
   CheckCircle,
-  FileCode,
   Info,
   GitCompare,
-  ArrowRight,
-  TrendingUp,
-  BookOpen
+  UploadCloud,
+  FileSpreadsheet
 } from "lucide-react";
 import { TRANSLATIONS } from "./translations";
 import { 
@@ -40,8 +38,9 @@ import {
   performGapAnalysis, 
   compareLessonsAI 
 } from "./geminiService";
+import { parseDocumentFile } from "./fileParser";
 
-// Default virtual documents for standalone client operation
+// Default virtual documents with bilingual translations inside the text content
 const DEFAULT_DOCUMENTS: UploadedDocument[] = [
   {
     id: "doc_cambridge_g5_ch1",
@@ -86,6 +85,43 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(!localStorage.getItem("gemini_api_key"));
 
   const t = TRANSLATIONS[language];
+
+  // Bilingual dynamic helpers
+  const translateTwsStage = (stage: string) => {
+    if (language !== "vi") return stage;
+    switch (stage) {
+      case "Planning": return "Lên kế hoạch";
+      case "Obtaining & Presenting Evidence": return "Thu thập & Trình bày Bằng chứng";
+      case "Analysis, Evaluation & Conclusions": return "Phân tích, Đánh giá & Kết luận";
+      default: return stage;
+    }
+  };
+
+  const translateCognitiveLevel = (level: string) => {
+    if (language !== "vi") return level;
+    switch (level) {
+      case "Remembering": return "Nhớ";
+      case "Understanding": return "Hiểu";
+      case "Applying": return "Vận dụng";
+      case "Analyzing": return "Phân tích";
+      case "Evaluating": return "Đánh giá";
+      case "Creating": return "Sáng tạo";
+      default: return level;
+    }
+  };
+
+  const translateStrand = (strand: string) => {
+    if (language !== "vi") return strand;
+    switch (strand) {
+      case "Biology": return "Sinh học";
+      case "Chemistry": return "Hóa học";
+      case "Physics": return "Vật lý";
+      case "Earth & Space": return "Trái đất & Vũ trụ";
+      case "Thinking & Working Scientifically": return "Tư duy & Làm việc Khoa học";
+      case "Science in Context": return "Khoa học trong Bối cảnh";
+      default: return strand;
+    }
+  };
 
   // Navigation & Workspace states
   const [currentTab, setCurrentTab] = useState<TabType>("explorer");
@@ -146,7 +182,10 @@ export default function App() {
   // UI Toast or status indicators
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Import Center custom file fields
+  // Import Center custom file fields & states
+  const [uploadMode, setUploadMode] = useState<"file" | "manual">("file");
+  const [isParsingFile, setIsParsingFile] = useState(false);
+  const [fileParsingError, setFileParsingError] = useState<string | null>(null);
   const [newDocName, setNewDocName] = useState("");
   const [newDocType, setNewDocType] = useState<"PDF" | "Excel" | "Word">("PDF");
   const [newDocText, setNewDocText] = useState("");
@@ -176,7 +215,7 @@ export default function App() {
   const activeLesson = lessons.find(l => l.id === selectedLessonId) || lessons[0];
   const activeStandard = standards.find(s => s.id === selectedStandardId) || standards[0];
 
-  // Ingestion: Simulate uploading custom frameworks/books
+  // Ingestion: Simulate uploading custom frameworks/books manually
   const handleIngestDocument = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDocName.trim() || !newDocText.trim()) return;
@@ -200,6 +239,51 @@ export default function App() {
     setNewDocText("");
     showToast(t.uploadSuccess.replace("{name}", newDoc.name));
     setIsSplitReaderOpen(true);
+  };
+
+  // File Uploader Parser
+  const handleFileUpload = async (file: File) => {
+    if (!file) return;
+
+    setIsParsingFile(true);
+    setFileParsingError(null);
+
+    try {
+      const { textContent, docType } = await parseDocumentFile(file);
+
+      const newDoc: UploadedDocument = {
+        id: `doc_${Date.now()}`,
+        name: file.name,
+        type: docType,
+        uploadedAt: new Date().toISOString(),
+        fileSize: file.size,
+        status: "ready",
+        extractedText: textContent,
+        targetGrade: gradeFilter as any
+      };
+
+      const updatedDocs = [newDoc, ...documents];
+      setDocuments(updatedDocs);
+      
+      // Save locally if size permits
+      if (JSON.stringify(updatedDocs).length < 4000000) {
+        localStorage.setItem("uploaded_documents", JSON.stringify(updatedDocs));
+      } else {
+        showToast(language === "vi" 
+          ? "Đã nạp tài liệu vào phiên! Tệp lớn sẽ không lưu vĩnh viễn để tránh đầy bộ nhớ trình duyệt."
+          : "Large file loaded into active session! Not saved permanently to avoid local storage overflow."
+        );
+      }
+
+      showToast(t.uploadSuccess.replace("{name}", file.name));
+      setIsSplitReaderOpen(true);
+    } catch (err: any) {
+      console.error(err);
+      setFileParsingError(err.message || "Failed to extract text content.");
+      showToast(t.uploadError);
+    } finally {
+      setIsParsingFile(false);
+    }
   };
 
   // UI status progress helper
@@ -341,8 +425,11 @@ export default function App() {
     const matchesGrade = l.grade === gradeFilter;
     const matchesSearch = globalSearch.trim() === "" || 
       l.title.toLowerCase().includes(globalSearch.toLowerCase()) ||
+      (l.titleVi && l.titleVi.toLowerCase().includes(globalSearch.toLowerCase())) ||
       l.unitTitle.toLowerCase().includes(globalSearch.toLowerCase()) ||
-      l.learningObjectives.some(obj => obj.toLowerCase().includes(globalSearch.toLowerCase()));
+      (l.unitTitleVi && l.unitTitleVi.toLowerCase().includes(globalSearch.toLowerCase())) ||
+      l.learningObjectives.some(obj => obj.toLowerCase().includes(globalSearch.toLowerCase())) ||
+      (l.learningObjectivesVi && l.learningObjectivesVi.some(obj => obj.toLowerCase().includes(globalSearch.toLowerCase())));
     return matchesGrade && matchesSearch;
   });
 
@@ -420,7 +507,7 @@ export default function App() {
             {/* Language Switch */}
             <button
               onClick={handleToggleLanguage}
-              className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-xs font-semibold text-gray-700 transition-all flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-xs font-semibold text-gray-700 transition-all flex items-center gap-1.5 cursor-pointer"
               title="Change Language / Đổi ngôn ngữ"
             >
               <Globe className="w-3.5 h-3.5 text-amber-500" />
@@ -430,7 +517,7 @@ export default function App() {
             {/* Settings Trigger */}
             <button
               onClick={() => setShowSettingsModal(true)}
-              className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-xs font-semibold text-gray-700 transition-all flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-xs font-semibold text-gray-700 transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <Settings className="w-3.5 h-3.5 text-gray-500" />
               <span>{t.btnSettings}</span>
@@ -438,7 +525,7 @@ export default function App() {
             
             <button
               onClick={() => setIsSplitReaderOpen(!isSplitReaderOpen)}
-              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                 isSplitReaderOpen 
                   ? "bg-amber-500 text-white border-amber-500 shadow-sm" 
                   : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
@@ -503,6 +590,7 @@ export default function App() {
                         acc.push({
                           unitId: lesson.unitId,
                           unitTitle: lesson.unitTitle,
+                          unitTitleVi: lesson.unitTitleVi,
                           lessons: [lesson]
                         });
                       }
@@ -513,7 +601,7 @@ export default function App() {
                           <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] text-gray-600 border border-gray-200">
                             {unit.unitId.split("_")[0]}
                           </span>
-                          <span className="truncate">{unit.unitTitle}</span>
+                          <span className="truncate">{language === "vi" ? unit.unitTitleVi || unit.unitTitle : unit.unitTitle}</span>
                         </div>
                         <div className="space-y-1 pl-2">
                           {unit.lessons.map((lesson: LessonPlan) => (
@@ -521,7 +609,7 @@ export default function App() {
                               key={lesson.id}
                               id={`lesson-card-${lesson.id}`}
                               onClick={() => setSelectedLessonId(lesson.id)}
-                              className={`w-full text-left px-3 py-2.5 rounded-xl border text-xs font-medium transition-all ${
+                              className={`w-full text-left px-3 py-2.5 rounded-xl border text-xs font-medium transition-all cursor-pointer ${
                                 selectedLessonId === lesson.id
                                   ? "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/10"
                                   : "bg-white text-gray-700 border-gray-100 hover:bg-gray-50"
@@ -535,7 +623,9 @@ export default function App() {
                                   {t.durationMin.replace("{duration}", lesson.durationMinutes.toString())}
                                 </span>
                               </div>
-                              <p className="mt-1 font-semibold truncate leading-snug">{lesson.title}</p>
+                              <p className="mt-1 font-semibold truncate leading-snug">
+                                {language === "vi" ? lesson.titleVi || lesson.title : lesson.title}
+                              </p>
                             </button>
                           ))}
                         </div>
@@ -569,13 +659,15 @@ export default function App() {
                               : `Lesson ${activeLesson.lessonNumber} of ${activeLesson.durationMinutes} minutes`}
                           </span>
                         </div>
-                        <h2 className="text-lg font-bold text-gray-900 mt-2">{activeLesson.title}</h2>
+                        <h2 className="text-lg font-bold text-gray-900 mt-2">
+                          {language === "vi" ? activeLesson.titleVi || activeLesson.title : activeLesson.title}
+                        </h2>
                       </div>
 
                       <div className="flex gap-2 shrink-0">
                         <button
                           onClick={() => setCurrentTab("ai-review")}
-                          className="px-3 py-1.5 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all shadow-sm"
+                          className="px-3 py-1.5 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                         >
                           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                           <span>{t.btnAuditWithAI}</span>
@@ -592,9 +684,9 @@ export default function App() {
                           {t.learningObjectives}
                         </h4>
                         <div className="space-y-2">
-                          {activeLesson.learningObjectives.map((obj, i) => (
+                          {(language === "vi" && activeLesson.learningObjectivesVi ? activeLesson.learningObjectivesVi : activeLesson.learningObjectives).map((obj, i) => (
                             <div key={i} className="flex gap-2 items-start bg-gray-50 border border-gray-100 p-3 rounded-xl text-xs text-gray-700">
-                              <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-950 font-bold flex items-center justify-center shrink-0">
+                              <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-955 font-bold flex items-center justify-center shrink-0">
                                 {i + 1}
                               </span>
                               <p className="mt-0.5 leading-relaxed">{obj}</p>
@@ -621,10 +713,12 @@ export default function App() {
                                     {code}
                                   </span>
                                   <span className="text-[10px] font-mono text-emerald-700/80 uppercase font-semibold">
-                                    {matchedStd?.strand || "Standard"}
+                                    {translateStrand(matchedStd?.strand || "Standard")}
                                   </span>
                                 </div>
-                                <p className="leading-relaxed mt-1 text-emerald-900">{matchedStd?.description || "Unresolved Cambridge objective."}</p>
+                                <p className="leading-relaxed mt-1 text-emerald-900">
+                                  {language === "vi" ? matchedStd?.descriptionVi || matchedStd?.description : matchedStd?.description}
+                                </p>
                               </div>
                             );
                           })}
@@ -641,16 +735,18 @@ export default function App() {
                         </h4>
                         <div className="space-y-2">
                           {activeLesson.twsElements.map((tws) => (
-                            <div key={tws.id} className="bg-sky-50 text-sky-950 border border-sky-100 p-3.5 rounded-xl text-xs">
-                              <div className="flex justify-between items-center mb-1">
-                                <span className="text-[10px] font-mono font-bold tracking-wide text-sky-800 uppercase bg-sky-100/60 px-2 py-0.5 rounded-full">
-                                  {tws.stage}
+                            <div key={tws.id} className="bg-sky-50 text-sky-955 border border-sky-100 p-3.5 rounded-xl text-xs font-sans">
+                              <div className="flex justify-between items-center mb-1 font-mono">
+                                <span className="text-[10px] font-bold tracking-wide text-sky-850 uppercase bg-sky-100/60 px-2 py-0.5 rounded-full">
+                                  {translateTwsStage(tws.stage)}
                                 </span>
-                                <span className="text-[9px] font-mono text-sky-600 uppercase font-semibold">
-                                  Cognitive level: {tws.bloomCognitiveLevel}
+                                <span className="text-[9px] text-sky-700 uppercase font-semibold">
+                                  {language === "vi" ? "MỨC ĐỘ NHẬN THỨC" : "COGNITIVE LEVEL"}: {translateCognitiveLevel(tws.bloomCognitiveLevel).toUpperCase()}
                                 </span>
                               </div>
-                              <p className="mt-1 leading-relaxed text-sky-900">{tws.description}</p>
+                              <p className="mt-1 leading-relaxed text-sky-900 font-sans">
+                                {language === "vi" ? tws.descriptionVi || tws.description : tws.description}
+                              </p>
                             </div>
                           ))}
                         </div>
@@ -661,8 +757,8 @@ export default function App() {
                         <h4 className="text-xs font-bold text-gray-500 tracking-wider uppercase font-mono mb-2">
                           {t.activitiesFlow}
                         </h4>
-                        <div className="border-l-2 border-gray-100 pl-4 space-y-4">
-                          {activeLesson.activities.map((act, i) => (
+                        <div className="border-l-2 border-gray-100 pl-4 space-y-4 font-sans">
+                          {(language === "vi" && activeLesson.activitiesVi ? activeLesson.activitiesVi : activeLesson.activities).map((act, i) => (
                             <div key={i} className="relative text-xs">
                               <div className="absolute -left-6 top-0 w-3 h-3 bg-amber-500 border-2 border-white rounded-full shadow" />
                               <p className="font-semibold text-gray-800">{language === "vi" ? `Giai đoạn ${i + 1}` : `Phase ${i + 1}`}</p>
@@ -674,11 +770,11 @@ export default function App() {
 
                       {/* Standard Thinking Questions */}
                       <div>
-                        <h4 className="text-xs font-bold text-gray-500 tracking-wider uppercase font-mono mb-2">
+                        <h4 className="text-xs font-bold text-gray-500 tracking-wider uppercase font-mono mb-2 font-sans">
                           {t.coreThinkingQuestions}
                         </h4>
-                        <div className="space-y-2">
-                          {activeLesson.thinkingQuestions.map((q, i) => (
+                        <div className="space-y-2 font-sans">
+                          {(language === "vi" && activeLesson.thinkingQuestionsVi ? activeLesson.thinkingQuestionsVi : activeLesson.thinkingQuestions).map((q, i) => (
                             <div key={i} className="bg-purple-50 border border-purple-100 text-purple-900 p-3 rounded-xl text-xs italic">
                               "{q}"
                             </div>
@@ -687,12 +783,12 @@ export default function App() {
                       </div>
 
                       {/* Guidance */}
-                      <div className="bg-amber-50/50 border border-amber-100/60 rounded-xl p-4">
+                      <div className="bg-amber-50/50 border border-amber-100/60 rounded-xl p-4 font-sans">
                         <h4 className="text-xs font-bold text-amber-900 tracking-wider uppercase font-mono mb-2">
                           {t.syllabusWarnings}
                         </h4>
-                        <p className="text-xs text-amber-950 leading-relaxed italic">
-                          {activeLesson.teacherGuidance}
+                        <p className="text-xs text-amber-955 leading-relaxed italic">
+                          {language === "vi" && activeLesson.teacherGuidanceVi ? activeLesson.teacherGuidanceVi : activeLesson.teacherGuidance}
                         </p>
                       </div>
 
@@ -700,7 +796,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-gray-400">
-                    <Layers className="w-12 h-12 text-gray-300 stroke-1 mb-2" />
+                    <Layers className="w-12 h-12 text-gray-300 stroke-1 mb-2 animate-pulse" />
                     <p className="text-sm">{t.unselectedLesson}</p>
                   </div>
                 )}
@@ -715,29 +811,31 @@ export default function App() {
               {/* Left panel: Selected Lesson Context */}
               <div className="col-span-1 bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col h-140">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest font-mono mb-1">{t.mappingLessonContext}</h3>
-                <h2 className="text-sm font-bold text-gray-900 truncate">{activeLesson?.title || "No Lesson Selected"}</h2>
+                <h2 className="text-sm font-bold text-gray-900 truncate">{language === "vi" ? activeLesson?.titleVi || activeLesson?.title : activeLesson?.title || "No Lesson Selected"}</h2>
                 
                 <div className="mt-4 flex-1 overflow-y-auto space-y-4">
-                  <p className="text-xs text-gray-500 leading-relaxed">
+                  <p className="text-xs text-gray-500 leading-relaxed font-sans">
                     {t.mappingInstructions}
                   </p>
 
-                  <div className="bg-gray-50 border border-gray-100 rounded-xl p-4">
+                  <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 font-sans">
                     <h4 className="text-xs font-bold text-gray-700 font-mono mb-2">{t.activeMappedStandards}</h4>
                     <div className="space-y-2">
                       {activeLesson?.mappedCambridgeStandards.map((code) => {
                         const std = standards.find(s => s.code === code);
                         return (
-                          <div key={code} className="bg-white border border-gray-200 p-2.5 rounded-lg text-xs flex justify-between items-start">
+                          <div key={code} className="bg-white border border-gray-200 p-2.5 rounded-lg text-xs flex justify-between items-start font-sans">
                             <div>
                               <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
                                 {code}
                               </span>
-                              <p className="mt-1 text-gray-600 line-clamp-2 text-[11px] leading-snug">{std?.description}</p>
+                              <p className="mt-1 text-gray-600 line-clamp-2 text-[11px] leading-snug">
+                                {language === "vi" ? std?.descriptionVi || std?.description : std?.description}
+                              </p>
                             </div>
                             <button 
                               onClick={() => toggleStandardMapping(code)}
-                              className="text-[10px] text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-1 py-0.5 ml-2"
+                              className="text-[10px] text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-1 py-0.5 ml-2 cursor-pointer"
                             >
                               {t.btnRemove}
                             </button>
@@ -756,7 +854,7 @@ export default function App() {
               <div className="col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden h-140">
                 <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
                   <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans">
                       Stage {gradeFilter} Cambridge Standards
                     </h3>
                     <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.frameworkDirectory}</h2>
@@ -777,27 +875,27 @@ export default function App() {
                               : "bg-white border-gray-100 hover:bg-gray-50"
                           }`}
                         >
-                          <div className="flex justify-between items-start gap-4">
+                          <div className="flex justify-between items-start gap-4 font-sans">
                             <div className="space-y-1">
-                              <div className="flex gap-2 items-center">
-                                <span className="px-2 py-0.5 bg-emerald-600 text-white font-mono text-[10px] font-bold rounded">
+                              <div className="flex gap-2 items-center font-mono">
+                                <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-bold rounded">
                                   {std.code}
                                 </span>
-                                <span className="text-[10px] uppercase font-mono tracking-wider text-gray-400">
-                                  {std.strand} • {std.substrand}
+                                <span className="text-[10px] uppercase tracking-wider text-gray-400">
+                                  {translateStrand(std.strand)} • {language === "vi" ? std.substrandVi || std.substrand : std.substrand}
                                 </span>
                               </div>
                               <p className="text-xs text-gray-800 leading-relaxed font-sans pt-1">
-                                {std.description}
+                                {language === "vi" ? std.descriptionVi || std.description : std.description}
                               </p>
                               <span className="inline-block mt-1 text-[9px] font-mono text-gray-400 uppercase">
-                                Bloom's: {std.bloomCognitiveLevel}
+                                Bloom's: {translateCognitiveLevel(std.bloomCognitiveLevel)}
                               </span>
                             </div>
 
                             <button
                               onClick={() => toggleStandardMapping(std.code)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-all ${
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-all cursor-pointer ${
                                 isMapped
                                   ? "bg-emerald-600 text-white shadow-sm"
                                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -821,14 +919,14 @@ export default function App() {
               {/* Title Bar */}
               <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono">Module: AI Curriculum Auditor</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans">Module: AI Curriculum Auditor</h3>
                   <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.auditorTitle}</h2>
                 </div>
                 
                 <button
                   onClick={handleAnalyzeLesson}
                   disabled={isAnalyzing}
-                  className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-bold rounded-xl flex items-center gap-2 disabled:bg-gray-100 disabled:text-gray-400 transition-all shadow-sm"
+                  className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-bold rounded-xl flex items-center gap-2 disabled:bg-gray-100 disabled:text-gray-400 transition-all shadow-sm cursor-pointer"
                 >
                   {isAnalyzing ? (
                     <>
@@ -853,7 +951,7 @@ export default function App() {
                     <Activity className="w-3.5 h-3.5 text-amber-500" />
                     {t.gapSelectionTitle}
                   </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-sans">
                     <label className="flex items-center gap-2 cursor-pointer font-medium text-gray-700 bg-white border border-gray-150 p-2.5 rounded-lg hover:bg-gray-50 select-none">
                       <input 
                         type="checkbox" 
@@ -894,10 +992,10 @@ export default function App() {
                 </div>
 
                 {activeAnalysis ? (
-                  <div className="space-y-6 select-text">
+                  <div className="space-y-6 select-text font-sans">
                     
                     {/* Summary Block */}
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-3 gap-4 font-mono">
                       
                       {/* Alignment Meter */}
                       <div className="col-span-1 bg-gray-50 border border-gray-100 rounded-xl p-4 flex flex-col items-center justify-center text-center">
@@ -913,7 +1011,7 @@ export default function App() {
                       {/* Cognitive Depth Card */}
                       <div className="col-span-1 bg-gray-50 border border-gray-100 rounded-xl p-4 flex flex-col items-center justify-center text-center">
                         <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-widest">{t.scoreCognitive}</span>
-                        <span className="text-sm font-bold text-gray-800 mt-2 truncate max-w-full">
+                        <span className="text-xs font-bold text-gray-800 mt-2 truncate max-w-full">
                           {activeAnalysis.cognitiveDepthRating}
                         </span>
                         <p className="text-[10px] text-gray-500 mt-2 font-medium">Bloom's Taxonomy Audit</p>
@@ -933,7 +1031,7 @@ export default function App() {
                     </div>
 
                     {/* TWS Audit details */}
-                    <div className="bg-sky-50 text-sky-950 border border-sky-100 rounded-xl p-4">
+                    <div className="bg-sky-50 text-sky-950 border border-sky-100 rounded-xl p-4 font-sans">
                       <h4 className="text-xs font-bold text-sky-900 uppercase tracking-wider font-mono mb-1">
                         {t.twsAuditSection}
                       </h4>
@@ -943,7 +1041,7 @@ export default function App() {
                     </div>
 
                     {/* Strengths & Omissions */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-4 font-sans">
                       <div className="bg-emerald-50 text-emerald-950 border border-emerald-100 rounded-xl p-4">
                         <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider font-mono mb-2">
                           {t.strengthsTitle}
@@ -968,13 +1066,13 @@ export default function App() {
                     </div>
 
                     {/* Actionable recommendations */}
-                    <div className="bg-amber-50/50 border border-amber-100/60 rounded-xl p-5">
+                    <div className="bg-amber-50/50 border border-amber-100/60 rounded-xl p-5 font-sans">
                       <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wider font-mono mb-3">
                         {t.improvementsTitle}
                       </h4>
                       <div className="space-y-2">
                         {activeAnalysis.actionableImprovements.map((imp, i) => (
-                          <div key={i} className="flex gap-2 items-start text-xs text-amber-950 leading-relaxed">
+                          <div key={i} className="flex gap-2 items-start text-xs text-amber-955 leading-relaxed">
                             <span className="w-5 h-5 rounded-full bg-amber-100 font-bold flex items-center justify-center shrink-0">
                               {i + 1}
                             </span>
@@ -989,8 +1087,8 @@ export default function App() {
                   <div className="text-center py-16 text-gray-400 max-w-md mx-auto">
                     <Sparkles className="w-10 h-10 mx-auto text-amber-400 animate-pulse mb-3" />
                     <h4 className="text-sm font-bold text-gray-700">{t.auditorIdleTitle}</h4>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                      {t.auditorIdleDesc.replace("{title}", activeLesson?.title || "")}
+                    <p className="text-xs text-gray-500 mt-1 leading-relaxed font-sans">
+                      {t.auditorIdleDesc.replace("{title}", language === "vi" ? activeLesson?.titleVi || activeLesson?.title : activeLesson?.title || "")}
                     </p>
                   </div>
                 )}
@@ -1005,14 +1103,14 @@ export default function App() {
               {/* Title Bar */}
               <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono">Module: Thinking Question Generator</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans font-sans">Module: Thinking Question Generator</h3>
                   <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.questionGenTitle}</h2>
                 </div>
                 
                 <button
                   onClick={handleGenerateQuestions}
                   disabled={isGeneratingQuestions}
-                  className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-bold rounded-xl flex items-center gap-2 disabled:bg-gray-100 disabled:text-gray-400 transition-all shadow-sm"
+                  className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-bold rounded-xl flex items-center gap-2 disabled:bg-gray-100 disabled:text-gray-400 transition-all shadow-sm cursor-pointer"
                 >
                   {isGeneratingQuestions ? (
                     <>
@@ -1030,7 +1128,7 @@ export default function App() {
 
               {/* Questions Panel */}
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                <div className="bg-amber-50 text-amber-950 border border-amber-100 rounded-xl p-3.5 text-xs flex gap-2">
+                <div className="bg-amber-50 text-amber-955 border border-amber-100 rounded-xl p-3.5 text-xs flex gap-2">
                   <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <p>
                     {language === "vi" 
@@ -1041,15 +1139,15 @@ export default function App() {
 
                 {generatedQuestions.length > 0 ? (
                   generatedQuestions.map((q, idx) => (
-                    <div key={idx} className="bg-gray-50 border border-gray-100 rounded-xl p-5 space-y-3 relative group select-text">
+                    <div key={idx} className="bg-gray-50 border border-gray-100 rounded-xl p-5 space-y-3 relative group select-text font-sans">
                       
-                      <div className="flex justify-between items-start">
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-200 rounded text-[10px] font-bold font-mono uppercase">
+                      <div className="flex justify-between items-start font-mono">
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-200 rounded text-[10px] font-bold uppercase">
                           {t.questionLevel.replace("{level}", q.level)}
                         </span>
                         <button
                           onClick={() => copyText(`Question: ${q.question}\n\nExpected Answer Guide: ${q.expectedAnswerGuide}`)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-200 rounded text-gray-500"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-200 rounded text-gray-500 cursor-pointer"
                           title="Copy question details"
                         >
                           <Copy className="w-3.5 h-3.5" />
@@ -1060,7 +1158,7 @@ export default function App() {
                         {q.question}
                       </p>
 
-                      <div className="text-xs text-gray-600 space-y-2 leading-relaxed">
+                      <div className="text-xs text-gray-600 space-y-2 leading-relaxed font-sans">
                         <p><span className="font-semibold text-gray-700">{t.pedagogicalIntent}:</span> {q.pedagogicalIntent}</p>
                         <p className="text-amber-900/90 bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/50 mt-1">
                           <span className="font-semibold text-amber-955 font-mono text-[10px] block uppercase mb-1">{t.expectedAnswer}:</span> 
@@ -1077,9 +1175,9 @@ export default function App() {
                 ) : (
                   <div className="text-center py-16 text-gray-400 max-w-md mx-auto">
                     <HelpCircle className="w-10 h-10 mx-auto text-amber-400 animate-pulse mb-3" />
-                    <h4 className="text-sm font-bold text-gray-700">{t.questionIdleTitle}</h4>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                      {t.questionIdleDesc.replace("{title}", activeLesson?.title || "")}
+                    <h4 className="text-sm font-bold text-gray-700 font-sans">{t.questionIdleTitle}</h4>
+                    <p className="text-xs text-gray-500 mt-1 leading-relaxed font-sans font-sans">
+                      {t.questionIdleDesc.replace("{title}", language === "vi" ? activeLesson?.titleVi || activeLesson?.title : activeLesson?.title || "")}
                     </p>
                   </div>
                 )}
@@ -1089,19 +1187,19 @@ export default function App() {
 
           {/* TAB 5: TEACHER GUIDANCE CREATOR */}
           {currentTab === "guidance-gen" && (
-            <div className="max-w-4xl mx-auto bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden h-140 flex flex-col">
+            <div className="max-w-4xl mx-auto bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden h-140 flex flex-col animate-fade-in">
               
               {/* Title Bar */}
               <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono">Module: Teacher Guidance Creator</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans">Module: Teacher Guidance Creator</h3>
                   <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.guidanceCreatorTitle}</h2>
                 </div>
                 
                 <button
                   onClick={handleGenerateGuidance}
                   disabled={isGeneratingGuidance}
-                  className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-bold rounded-xl flex items-center gap-2 disabled:bg-gray-100 disabled:text-gray-400 transition-all shadow-sm"
+                  className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-bold rounded-xl flex items-center gap-2 disabled:bg-gray-100 disabled:text-gray-400 transition-all shadow-sm cursor-pointer"
                 >
                   {isGeneratingGuidance ? (
                     <>
@@ -1118,16 +1216,16 @@ export default function App() {
               </div>
 
               {/* Guidance Content panel */}
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-auto p-6 text-gray-850">
                 {generatedGuidance ? (
-                  <div className="space-y-6 select-text">
+                  <div className="space-y-6 select-text font-sans">
                     
                     {/* Pedagogical Strategy block */}
                     <div>
                       <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest font-mono mb-2">
                         {t.pedagogicalFramework}
                       </h4>
-                      <p className="text-xs text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100">
+                      <p className="text-xs text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100 font-sans">
                         {generatedGuidance.pedagogicalFramework}
                       </p>
                     </div>
@@ -1137,13 +1235,13 @@ export default function App() {
                       <h4 className="text-xs font-bold text-red-800 uppercase tracking-widest font-mono mb-2">
                         {t.misconceptionsTitle}
                       </h4>
-                      <div className="space-y-3">
+                      <div className="space-y-3 font-sans">
                         {generatedGuidance.misconceptionAlerts.map((m: any, i: number) => (
                           <div key={i} className="bg-red-50/50 border border-red-100 rounded-xl p-4 space-y-2">
                             <div className="text-xs font-bold text-red-800 uppercase font-mono">
                               ALERT {i + 1}: "{m.misconception}"
                             </div>
-                            <div className="text-xs text-red-950 leading-relaxed space-y-1">
+                            <div className="text-xs text-red-955 leading-relaxed space-y-1">
                               <p><span className="font-semibold">{language === "vi" ? "Giải thích Khoa học" : "Scientific Correction"}:</span> {m.scientificCorrection}</p>
                               <p className="text-gray-600"><span className="font-semibold text-red-900">{language === "vi" ? "Cách can thiệp" : "Intervention Strategy"}:</span> {m.interventionStrategy}</p>
                             </div>
@@ -1157,7 +1255,7 @@ export default function App() {
                       <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest font-mono mb-2">
                         {t.practicalLabTitle}
                       </h4>
-                      <p className="text-xs text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100">
+                      <p className="text-xs text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100 font-sans">
                         {generatedGuidance.practicalLabGuidelines}
                       </p>
                     </div>
@@ -1167,7 +1265,7 @@ export default function App() {
                       <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest font-mono mb-2">
                         {t.differentiationTitle}
                       </h4>
-                      <p className="text-xs text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100">
+                      <p className="text-xs text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100 font-sans">
                         {generatedGuidance.differentiationTips}
                       </p>
                     </div>
@@ -1180,9 +1278,9 @@ export default function App() {
                 ) : (
                   <div className="text-center py-16 text-gray-400 max-w-md mx-auto">
                     <FileText className="w-10 h-10 mx-auto text-amber-400 animate-pulse mb-3" />
-                    <h4 className="text-sm font-bold text-gray-700">{t.guidanceIdleTitle}</h4>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                      {t.guidanceIdleDesc.replace("{title}", activeLesson?.title || "")}
+                    <h4 className="text-sm font-bold text-gray-700 font-sans">{t.guidanceIdleTitle}</h4>
+                    <p className="text-xs text-gray-500 mt-1 leading-relaxed font-sans">
+                      {t.guidanceIdleDesc.replace("{title}", language === "vi" ? activeLesson?.titleVi || activeLesson?.title : activeLesson?.title || "")}
                     </p>
                   </div>
                 )}
@@ -1197,14 +1295,14 @@ export default function App() {
               {/* Title Bar */}
               <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono">Module: Cambridge Gap Analysis</h3>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans">Module: Cambridge Gap Analysis</h3>
                   <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.gapAnalysisTitle}</h2>
                 </div>
                 
                 <button
                   onClick={handleRunGapAnalysis}
                   disabled={isAnalyzingGaps}
-                  className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-bold rounded-xl flex items-center gap-2 disabled:bg-gray-100 disabled:text-gray-400 transition-all shadow-sm"
+                  className="px-4 py-2 bg-[#18181b] hover:bg-[#27272a] text-white text-xs font-bold rounded-xl flex items-center gap-2 disabled:bg-gray-100 disabled:text-gray-400 transition-all shadow-sm cursor-pointer"
                 >
                   {isAnalyzingGaps ? (
                     <>
@@ -1223,15 +1321,15 @@ export default function App() {
               {/* Gap report feed */}
               <div className="flex-1 overflow-y-auto p-6">
                 {activeGapReport ? (
-                  <div className="space-y-6 select-text">
+                  <div className="space-y-6 select-text font-sans">
                     
                     {/* Summary and Metrics */}
-                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 flex items-center justify-between">
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 flex items-center justify-between font-mono">
                       <div className="space-y-1">
                         <h3 className="text-sm font-bold text-gray-900 leading-none">
                           {activeGapReport.title}
                         </h3>
-                        <p className="text-xs text-gray-500 font-mono">
+                        <p className="text-xs text-gray-550">
                           Analysis Run: {new Date(activeGapReport.runDate).toLocaleDateString()}
                         </p>
                       </div>
@@ -1241,7 +1339,7 @@ export default function App() {
                     </div>
 
                     {/* Gap analysis summary */}
-                    <div className="text-xs text-gray-700 bg-gray-50/50 p-4 border border-gray-100 rounded-xl leading-relaxed">
+                    <div className="text-xs text-gray-700 bg-gray-50/50 p-4 border border-gray-100 rounded-xl leading-relaxed font-sans">
                       <span className="font-bold text-gray-800 block mb-1">{t.auditSummary}</span>
                       {activeGapReport.summary}
                     </div>
@@ -1251,18 +1349,18 @@ export default function App() {
                       {activeGapReport.identifiedGaps.map((gap, idx) => (
                         <div key={idx} className="bg-white border border-gray-200 rounded-xl p-4.5 space-y-3.5 relative shadow-sm">
                           
-                          <div className="flex justify-between items-center">
+                          <div className="flex justify-between items-center font-mono">
                             <div className="flex items-center gap-2">
                               <span className="px-2 py-0.5 bg-red-600 text-white rounded font-mono text-[10px] font-bold">
                                 {gap.standardCode}
                               </span>
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold font-mono uppercase ${
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
                                 gap.severity === "High" ? "bg-red-55 text-red-700" : "bg-amber-55 text-amber-700"
                               }`}>
                                 {t.severityLevel.replace("{severity}", gap.severity)}
                               </span>
                             </div>
-                            <span className="text-[10px] font-mono tracking-wider text-gray-400 uppercase">
+                            <span className="text-[10px] tracking-wider text-gray-400 uppercase">
                               {gap.gapType}
                             </span>
                           </div>
@@ -1270,10 +1368,10 @@ export default function App() {
                           <div className="text-xs space-y-2">
                             <p><span className="font-semibold text-gray-700">{t.standardRequirement}:</span> {gap.standardDesc}</p>
                             <p className="text-red-900 bg-red-50/40 p-2.5 rounded-lg border border-red-100/50">
-                              <span className="font-semibold text-red-950 block font-mono text-[10px] uppercase mb-1">{t.omissionDesc}:</span> 
+                              <span className="font-semibold text-red-955 block font-mono text-[10px] uppercase mb-1">{t.omissionDesc}:</span> 
                               {gap.description}
                             </p>
-                            <p className="text-emerald-900 bg-emerald-50/40 p-2.5 rounded-lg border border-emerald-100/50">
+                            <p className="text-emerald-900 bg-emerald-50/40 p-2.5 rounded-lg border border-emerald-100/50 font-sans">
                               <span className="font-semibold text-emerald-955 block font-mono text-[10px] uppercase mb-1">{t.actionPlan}:</span> 
                               {gap.recommendation}
                             </p>
@@ -1291,8 +1389,8 @@ export default function App() {
                 ) : (
                   <div className="text-center py-16 text-gray-400 max-w-md mx-auto">
                     <Activity className="w-10 h-10 mx-auto text-amber-400 animate-pulse mb-3" />
-                    <h4 className="text-sm font-bold text-gray-700">{t.gapIdleTitle}</h4>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                    <h4 className="text-sm font-bold text-gray-700 font-sans">{t.gapIdleTitle}</h4>
+                    <p className="text-xs text-gray-500 mt-1 leading-relaxed font-sans font-sans">
                       {t.gapIdleDesc.replace("{grade}", gradeFilter.toString())}
                     </p>
                   </div>
@@ -1306,10 +1404,10 @@ export default function App() {
             <div className="max-w-5xl mx-auto h-full space-y-6">
               
               {/* Selector panel */}
-              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
                 <div>
-                  <h2 className="text-sm font-bold text-gray-900">{t.comparatorTitle}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{t.comparatorSubtitle}</p>
+                  <h2 className="text-sm font-bold text-gray-900 font-sans">{t.comparatorTitle}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5 font-sans">{t.comparatorSubtitle}</p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4">
@@ -1319,10 +1417,12 @@ export default function App() {
                     <select 
                       value={compareIdA}
                       onChange={(e) => setCompareIdA(e.target.value)}
-                      className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500"
+                      className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500 focus:outline-none"
                     >
                       {lessons.map(l => (
-                        <option key={l.id} value={l.id}>L{l.lessonNumber} - {l.title.substring(0,25)}...</option>
+                        <option key={l.id} value={l.id}>
+                          L{l.lessonNumber} - {(language === "vi" ? l.titleVi || l.title : l.title).substring(0,25)}...
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -1333,10 +1433,12 @@ export default function App() {
                     <select 
                       value={compareIdB}
                       onChange={(e) => setCompareIdB(e.target.value)}
-                      className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500"
+                      className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500 focus:outline-none"
                     >
                       {lessons.map(l => (
-                        <option key={l.id} value={l.id}>L{l.lessonNumber} - {l.title.substring(0,25)}...</option>
+                        <option key={l.id} value={l.id}>
+                          L{l.lessonNumber} - {(language === "vi" ? l.titleVi || l.title : l.title).substring(0,25)}...
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -1370,16 +1472,18 @@ export default function App() {
                   return (
                     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
                       <span className="text-[10px] font-mono font-bold text-gray-400 uppercase">{t.lessonA}</span>
-                      <h3 className="text-sm font-bold text-gray-900 leading-snug">{lessonA.title}</h3>
+                      <h3 className="text-sm font-bold text-gray-900 leading-snug">
+                        {language === "vi" ? lessonA.titleVi || lessonA.title : lessonA.title}
+                      </h3>
                       
-                      <div className="space-y-1.5 text-xs text-gray-600">
+                      <div className="space-y-1.5 text-xs text-gray-600 font-sans">
                         <p><span className="font-semibold">{t.duration}:</span> {lessonA.durationMinutes} {language === "vi" ? "phút" : "Minutes"}</p>
-                        <p><span className="font-semibold">Unit:</span> {lessonA.unitTitle}</p>
+                        <p><span className="font-semibold">Unit:</span> {language === "vi" ? lessonA.unitTitleVi || lessonA.unitTitle : lessonA.unitTitle}</p>
                       </div>
 
                       <div className="border-t border-gray-100 pt-3">
                         <span className="text-[10px] font-mono font-bold text-gray-400 block mb-2 uppercase">{t.objectivesCount}</span>
-                        <span className="px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg text-xs font-semibold">
+                        <span className="px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg text-xs font-semibold font-sans">
                           {lessonA.learningObjectives.length} {language === "vi" ? "Mục tiêu" : "Active Objectives"}
                         </span>
                       </div>
@@ -1388,7 +1492,7 @@ export default function App() {
                         <span className="text-[10px] font-mono font-bold text-gray-400 block mb-2 uppercase">{t.mappedCodes}</span>
                         <div className="flex flex-wrap gap-1.5">
                           {lessonA.mappedCambridgeStandards.map(code => (
-                            <span key={code} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-950 border border-emerald-150 rounded text-[10px] font-mono font-semibold">
+                            <span key={code} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-955 border border-emerald-150 rounded text-[10px] font-mono font-semibold">
                               {code}
                             </span>
                           ))}
@@ -1397,11 +1501,11 @@ export default function App() {
 
                       <div className="border-t border-gray-100 pt-3">
                         <span className="text-[10px] font-mono font-bold text-gray-400 block mb-2 uppercase">{t.twsSkills}</span>
-                        <div className="space-y-2">
+                        <div className="space-y-2 font-sans">
                           {lessonA.twsElements.map(tws => (
                             <div key={tws.id} className="bg-sky-50/50 p-2 rounded border border-sky-100 text-[11px] text-sky-900">
-                              <span className="font-semibold text-[10px] text-sky-950 uppercase font-mono block">{tws.stage}</span>
-                              <p className="mt-0.5 leading-relaxed">{tws.description}</p>
+                              <span className="font-semibold text-[10px] text-sky-950 uppercase font-mono block">{translateTwsStage(tws.stage)}</span>
+                              <p className="mt-0.5 leading-relaxed">{language === "vi" ? tws.descriptionVi || tws.description : tws.description}</p>
                             </div>
                           ))}
                         </div>
@@ -1416,16 +1520,18 @@ export default function App() {
                   return (
                     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
                       <span className="text-[10px] font-mono font-bold text-gray-400 uppercase">{t.lessonB}</span>
-                      <h3 className="text-sm font-bold text-gray-900 leading-snug">{lessonB.title}</h3>
+                      <h3 className="text-sm font-bold text-gray-900 leading-snug">
+                        {language === "vi" ? lessonB.titleVi || lessonB.title : lessonB.title}
+                      </h3>
                       
-                      <div className="space-y-1.5 text-xs text-gray-600">
+                      <div className="space-y-1.5 text-xs text-gray-600 font-sans">
                         <p><span className="font-semibold">{t.duration}:</span> {lessonB.durationMinutes} {language === "vi" ? "phút" : "Minutes"}</p>
-                        <p><span className="font-semibold">Unit:</span> {lessonB.unitTitle}</p>
+                        <p><span className="font-semibold">Unit:</span> {language === "vi" ? lessonB.unitTitleVi || lessonB.unitTitle : lessonB.unitTitle}</p>
                       </div>
 
                       <div className="border-t border-gray-100 pt-3">
                         <span className="text-[10px] font-mono font-bold text-gray-400 block mb-2 uppercase">{t.objectivesCount}</span>
-                        <span className="px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg text-xs font-semibold">
+                        <span className="px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg text-xs font-semibold font-sans">
                           {lessonB.learningObjectives.length} {language === "vi" ? "Mục tiêu" : "Active Objectives"}
                         </span>
                       </div>
@@ -1434,7 +1540,7 @@ export default function App() {
                         <span className="text-[10px] font-mono font-bold text-gray-400 block mb-2 uppercase">{t.mappedCodes}</span>
                         <div className="flex flex-wrap gap-1.5">
                           {lessonB.mappedCambridgeStandards.map(code => (
-                            <span key={code} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-950 border border-emerald-150 rounded text-[10px] font-mono font-semibold">
+                            <span key={code} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-955 border border-emerald-150 rounded text-[10px] font-mono font-semibold">
                               {code}
                             </span>
                           ))}
@@ -1443,11 +1549,11 @@ export default function App() {
 
                       <div className="border-t border-gray-100 pt-3">
                         <span className="text-[10px] font-mono font-bold text-gray-400 block mb-2 uppercase">{t.twsSkills}</span>
-                        <div className="space-y-2">
+                        <div className="space-y-2 font-sans">
                           {lessonB.twsElements.map(tws => (
-                            <div key={tws.id} className="bg-sky-50/50 p-2 rounded border border-sky-100 text-[11px] text-sky-900">
-                              <span className="font-semibold text-[10px] text-sky-950 uppercase font-mono block">{tws.stage}</span>
-                              <p className="mt-0.5 leading-relaxed">{tws.description}</p>
+                            <div key={tws.id} className="bg-sky-50/50 p-2 rounded border border-sky-100 text-[11px] text-sky-900 font-sans">
+                              <span className="font-semibold text-[10px] text-sky-955 uppercase font-mono block">{translateTwsStage(tws.stage)}</span>
+                              <p className="mt-0.5 leading-relaxed">{language === "vi" ? tws.descriptionVi || tws.description : tws.description}</p>
                             </div>
                           ))}
                         </div>
@@ -1465,26 +1571,26 @@ export default function App() {
                     {t.aiCompareTitle}
                   </h3>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-gray-700 leading-relaxed">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-gray-700 leading-relaxed font-sans">
                     <div className="space-y-4">
                       <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                         <h4 className="font-bold text-gray-900 font-mono text-[10px] uppercase mb-1.5">{t.aiCompareSummary}</h4>
                         <p>{compareResult.comparisonSummary}</p>
                       </div>
 
-                      <div className="bg-sky-50/50 p-4 rounded-xl border border-sky-100/60 text-sky-950">
+                      <div className="bg-sky-50/50 p-4 rounded-xl border border-sky-100/60 text-sky-955">
                         <h4 className="font-bold text-sky-900 font-mono text-[10px] uppercase mb-1.5">{t.aiCompareTws}</h4>
                         <p>{compareResult.twsIntegrationComparison}</p>
                       </div>
                     </div>
 
                     <div className="space-y-4">
-                      <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100/60 text-purple-950">
+                      <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100/60 text-purple-955">
                         <h4 className="font-bold text-purple-900 font-mono text-[10px] uppercase mb-1.5">{t.aiCompareCognitive}</h4>
                         <p>{compareResult.cognitiveDepthAnalysis}</p>
                       </div>
 
-                      <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100/60 text-emerald-950">
+                      <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100/60 text-emerald-955">
                         <h4 className="font-bold text-emerald-900 font-mono text-[10px] uppercase mb-1.5">{t.aiCompareRevisions}</h4>
                         <p>{compareResult.recommendedRevisions}</p>
                       </div>
@@ -1512,7 +1618,7 @@ export default function App() {
                       className="p-3 bg-gray-50 border border-gray-100 hover:bg-gray-100/50 rounded-xl flex items-center justify-between transition-colors"
                     >
                       <div className="space-y-1">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 font-sans">
                           <span className={`w-2 h-2 rounded-full ${
                             doc.type === "PDF" ? "bg-red-500" : doc.type === "Excel" ? "bg-green-500" : "bg-blue-500"
                           }`} />
@@ -1530,7 +1636,7 @@ export default function App() {
                           setIsSplitReaderOpen(true);
                           showToast(t.toastCopied);
                         }}
-                        className="px-2 py-1 text-[10px] font-bold text-amber-900 hover:bg-amber-100/60 rounded"
+                        className="px-2 py-1 text-[10px] font-bold text-amber-900 hover:bg-amber-100/60 rounded cursor-pointer"
                       >
                         {t.btnReadPanel}
                       </button>
@@ -1540,58 +1646,123 @@ export default function App() {
               </div>
 
               {/* Right panel: Custom File Ingestion Uploader */}
-              <div className="col-span-3 bg-white rounded-2xl border border-gray-200 shadow-sm p-6 h-140 flex flex-col">
-                <h2 className="text-sm font-bold text-gray-900">{t.docIngestCenter}</h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  {t.docIngestDesc}
-                </p>
+              <div className="col-span-3 bg-white rounded-2xl border border-gray-200 shadow-sm p-6 h-140 flex flex-col font-sans">
+                
+                {/* Selector Header tab */}
+                <div className="flex border-b border-gray-100 mb-4 pb-0.5">
+                  <button
+                    onClick={() => { setUploadMode("file"); setFileParsingError(null); }}
+                    className={`flex-1 pb-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer ${
+                      uploadMode === "file" 
+                        ? "border-amber-500 text-amber-900" 
+                        : "border-transparent text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    {t.labelFileUploadIngest}
+                  </button>
+                  <button
+                    onClick={() => { setUploadMode("manual"); setFileParsingError(null); }}
+                    className={`flex-1 pb-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer ${
+                      uploadMode === "manual" 
+                        ? "border-amber-500 text-amber-900" 
+                        : "border-transparent text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    {t.labelManualIngest}
+                  </button>
+                </div>
 
-                <form onSubmit={handleIngestDocument} className="mt-5 flex-1 flex flex-col space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{t.fileName}</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. Cambridge_G5_Booster.pdf"
-                        value={newDocName}
-                        onChange={(e) => setNewDocName(e.target.value)}
+                {uploadMode === "file" ? (
+                  <div className="flex-1 flex flex-col justify-center">
+                    {isParsingFile ? (
+                      <div className="flex-1 flex flex-col items-center justify-center p-8 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
+                        <RefreshCw className="w-10 h-10 text-amber-500 animate-spin mb-4" />
+                        <p className="text-xs font-semibold text-gray-700">{t.labelParsingFile}</p>
+                        <p className="text-[10px] text-gray-400 mt-1 font-mono">Running Local Extractor Service</p>
+                      </div>
+                    ) : (
+                      <label 
+                        className="flex-1 flex flex-col items-center justify-center p-8 border-2 border-dashed border-gray-300 hover:border-amber-500 rounded-2xl bg-gray-50/30 hover:bg-amber-50/10 transition-all cursor-pointer group"
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const file = e.dataTransfer.files?.[0];
+                          if (file) handleFileUpload(file);
+                        }}
+                      >
+                        <UploadCloud className="w-12 h-12 text-gray-300 group-hover:text-amber-500 group-hover:scale-105 transition-all mb-4 stroke-1.5" />
+                        <p className="text-xs font-bold text-gray-700 text-center">{t.labelDragDrop}</p>
+                        <p className="text-[10px] text-gray-400 mt-1.5 text-center font-mono">{t.labelSupportedFormats}</p>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.md,.json"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleFileUpload(file);
+                          }}
+                        />
+                      </label>
+                    )}
+
+                    {fileParsingError && (
+                      <div className="mt-3 p-3 bg-red-50 border border-red-100 rounded-xl flex gap-2 items-start text-xs text-red-800">
+                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold">{language === "vi" ? "Lỗi phân tích tệp" : "File Parsing Failed"}</p>
+                          <p className="text-[10px] text-red-700/80 mt-0.5">{fileParsingError}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <form onSubmit={handleIngestDocument} className="flex-1 flex flex-col space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{t.fileName}</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. Cambridge_G5_Booster.pdf"
+                          value={newDocName}
+                          onChange={(e) => setNewDocName(e.target.value)}
+                          required
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 font-sans"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{t.docFormat}</label>
+                        <select
+                          value={newDocType}
+                          onChange={(e) => setNewDocType(e.target.value as any)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                        >
+                          <option value="PDF">{t.docFormatPdf}</option>
+                          <option value="Excel">{t.docFormatExcel}</option>
+                          <option value="Word">{t.docFormatWord}</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{t.extractedTextLabel}</label>
+                      <textarea
+                        placeholder="Paste extracted text, specific chapters or row listings here..."
+                        value={newDocText}
+                        onChange={(e) => setNewDocText(e.target.value)}
                         required
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 placeholder-gray-400"
+                        className="flex-1 w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-xs text-gray-700 placeholder-gray-400 resize-none font-sans focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
                       />
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{t.docFormat}</label>
-                      <select
-                        value={newDocType}
-                        onChange={(e) => setNewDocType(e.target.value as any)}
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500"
-                      >
-                        <option value="PDF">{t.docFormatPdf}</option>
-                        <option value="Excel">{t.docFormatExcel}</option>
-                        <option value="Word">{t.docFormatWord}</option>
-                      </select>
-                    </div>
-                  </div>
 
-                  <div className="flex-1 flex flex-col">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{t.extractedTextLabel}</label>
-                    <textarea
-                      placeholder="Paste extracted text, specific chapters or row listings here..."
-                      value={newDocText}
-                      onChange={(e) => setNewDocText(e.target.value)}
-                      required
-                      className="flex-1 w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-xs text-gray-700 placeholder-gray-400 resize-none font-sans"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>{t.btnSimulateUpload}</span>
-                  </button>
-                </form>
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>{t.btnSimulateUpload}</span>
+                    </button>
+                  </form>
+                )}
               </div>
 
             </div>
@@ -1638,12 +1809,12 @@ export default function App() {
                 <Settings className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-gray-900 leading-snug">{t.modalTitle}</h3>
+                <h3 className="text-sm font-bold text-gray-900 leading-snug font-sans">{t.modalTitle}</h3>
                 <p className="text-[10px] font-mono text-gray-400 uppercase tracking-wide mt-0.5">AI Curriculum Coprocessor</p>
               </div>
             </div>
 
-            <p className="text-xs text-gray-600 leading-relaxed">
+            <p className="text-xs text-gray-600 leading-relaxed font-sans">
               {t.modalInstructions}
             </p>
 
@@ -1651,7 +1822,7 @@ export default function App() {
               href="https://aistudio.google.com/api-keys" 
               target="_blank" 
               rel="noreferrer"
-              className="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
+              className="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all font-sans"
             >
               <Globe className="w-4 h-4 text-amber-600 animate-pulse" />
               <span>{t.btnGetApiKey}</span>
@@ -1659,19 +1830,19 @@ export default function App() {
 
             <div className="space-y-4">
               {/* API Key string input */}
-              <div className="space-y-1">
+              <div className="space-y-1 font-sans">
                 <label className="text-[10px] font-bold text-gray-400 uppercase">{t.labelApiKeyInput}</label>
                 <input 
                   type="password"
                   placeholder={t.placeholderApiKey}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500 placeholder-gray-400"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500 placeholder-gray-400 focus:outline-none"
                 />
               </div>
 
               {/* Model Picker Cards */}
-              <div className="space-y-2">
+              <div className="space-y-2 font-sans">
                 <label className="text-[10px] font-bold text-gray-400 uppercase">{t.labelSelectModel}</label>
                 <div className="grid grid-cols-1 gap-2">
                   {[
@@ -1683,7 +1854,7 @@ export default function App() {
                       key={model.id}
                       type="button"
                       onClick={() => setSelectedModel(model.id)}
-                      className={`w-full text-left p-3 rounded-xl border transition-all text-xs flex justify-between items-center ${
+                      className={`w-full text-left p-3 rounded-xl border transition-all text-xs flex justify-between items-center cursor-pointer ${
                         selectedModel === model.id
                           ? "bg-amber-50 text-amber-900 border-amber-300 shadow-sm"
                           : "bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100/60"
@@ -1700,13 +1871,13 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2 pt-2 font-sans">
               {/* Allow close button only if there is a saved API key */}
               {localStorage.getItem("gemini_api_key") && (
                 <button
                   type="button"
                   onClick={() => setShowSettingsModal(false)}
-                  className="flex-1 py-2.5 border border-gray-250 bg-white hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-xl"
+                  className="flex-1 py-2.5 border border-gray-250 bg-white hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-xl cursor-pointer"
                 >
                   {language === "vi" ? "Hủy" : "Cancel"}
                 </button>
@@ -1715,7 +1886,7 @@ export default function App() {
                 type="button"
                 onClick={() => handleSaveSettings(apiKey, selectedModel)}
                 disabled={!apiKey.trim()}
-                className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-150 disabled:text-gray-400 text-white text-xs font-bold rounded-xl shadow transition-all"
+                className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-150 disabled:text-gray-400 text-white text-xs font-bold rounded-xl shadow transition-all cursor-pointer"
               >
                 {t.btnSaveSettings}
               </button>

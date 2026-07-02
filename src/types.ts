@@ -4,16 +4,21 @@ export interface CambridgeStandard {
   id: string; // e.g. 5Bi_01
   code: string; // e.g. 5Bi.01
   strand: "Biology" | "Chemistry" | "Physics" | "Earth & Space" | "Thinking & Working Scientifically" | "Science in Context";
+  strandVi?: string;
   substrand: string; // e.g. Cells and Organisms, Properties of Materials
+  substrandVi?: string;
   stage: GradeLevel;
   description: string;
+  descriptionVi?: string;
   bloomCognitiveLevel: "Remembering" | "Understanding" | "Applying" | "Analyzing" | "Evaluating" | "Creating";
 }
 
 export interface TWSElement {
   id: string;
   stage: "Planning" | "Obtaining & Presenting Evidence" | "Analysis, Evaluation & Conclusions";
+  stageVi?: string;
   description: string;
+  descriptionVi?: string;
   bloomCognitiveLevel: string;
 }
 
@@ -22,15 +27,21 @@ export interface LessonPlan {
   grade: GradeLevel;
   unitId: string; // e.g. U1
   unitTitle: string; // e.g. Life Processes and Cells
+  unitTitleVi?: string;
   lessonNumber: number;
   title: string;
+  titleVi?: string;
   durationMinutes: number;
   learningObjectives: string[];
+  learningObjectivesVi?: string[];
   mappedCambridgeStandards: string[]; // array of codes like '5Bi.01'
   twsElements: TWSElement[];
   activities: string[];
+  activitiesVi?: string[];
   thinkingQuestions: string[];
+  thinkingQuestionsVi?: string[];
   teacherGuidance: string;
+  teacherGuidanceVi?: string;
   updatedAt: string;
 }
 
