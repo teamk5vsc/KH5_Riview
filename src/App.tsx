@@ -144,6 +144,7 @@ export default function App() {
   const [documents, setDocuments] = useState<UploadedDocument[]>(() => {
     const saved = localStorage.getItem("uploaded_documents");
     return saved ? JSON.parse(saved) : DEFAULT_DOCUMENTS;
+  });
   const [isSplitReaderOpen, setIsSplitReaderOpen] = useState(false);
   const [selectedDocIdReader, setSelectedDocIdReader] = useState<string>(() => {
     const saved = localStorage.getItem("uploaded_documents");
