@@ -2,28 +2,33 @@ import { LessonPlan, CambridgeStandard, UploadedDocument, GapAnalysisReport, AIR
 
 // The ordered list of models for automatic fallback retry
 export const FALLBACK_MODELS = [
-  "gemini-3-flash-preview",
-  "gemini-3-pro-preview",
-  "gemini-2.5-flash",
-  "gemini-2.5-pro",
-  "gemini-1.5-flash"
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+  "gemini-2.0-pro-exp"
 ];
 
 // Helper to map UI/future model names to currently active Google Developer API models
 export function mapModelName(modelName: string): string {
   switch (modelName) {
     case "gemini-3-flash-preview":
-      return "gemini-2.5-flash"; // Map to working fast model
+      return "gemini-2.0-flash"; // Map to working stable flash model
     case "gemini-3-pro-preview":
-      return "gemini-2.5-pro"; // Map to working pro model
+      return "gemini-1.5-pro"; // Map to working stable pro model
     case "gemini-2.5-flash":
-      return "gemini-2.5-flash";
+      return "gemini-2.0-flash";
     case "gemini-2.5-pro":
-      return "gemini-2.5-pro";
+      return "gemini-1.5-pro";
+    case "gemini-2.0-flash":
+      return "gemini-2.0-flash";
     case "gemini-1.5-flash":
       return "gemini-1.5-flash";
+    case "gemini-1.5-pro":
+      return "gemini-1.5-pro";
+    case "gemini-2.0-pro-exp":
+      return "gemini-2.0-pro-exp";
     default:
-      return "gemini-2.5-flash";
+      return "gemini-2.0-flash";
   }
 }
 
