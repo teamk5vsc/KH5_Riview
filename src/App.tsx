@@ -47,7 +47,8 @@ import {
   generateNotebookNotes,
   generateCustomLessonPlan,
   generateSlidesFromLesson,
-  extractCurriculumFromDocument
+  extractCurriculumFromDocument,
+  listAvailableModels
 } from "./geminiService";
 import { parseDocumentFile } from "./fileParser";
 
@@ -311,10 +312,40 @@ export default function App() {
   const [customActiveSubTab, setCustomActiveSubTab] = useState<'lesson' | 'slides'>('lesson');
 
   // Persist settings
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [availableModelsList, setAvailableModelsList] = useState<string[] | null>(null);
+
+  const handleTestConnection = async () => {
+    if (!apiKey.trim()) {
+      setConnectionError(language === "vi" ? "Vui lòng nhập API Key trước khi thử!" : "Please enter an API Key first!");
+      return;
+    }
+    setIsTestingConnection(true);
+    setConnectionError(null);
+    setAvailableModelsList(null);
+    try {
+      const models = await listAvailableModels(apiKey.trim());
+      setAvailableModelsList(models);
+      if (models.length > 0) {
+        // If current model is not in list, auto-select the first working one
+        if (!models.includes(selectedModel)) {
+          setSelectedModel(models.includes("gemini-2.0-flash") ? "gemini-2.0-flash" : models[0]);
+        }
+      }
+      showToast(language === "vi" ? "Kết nối API thành công!" : "API connected successfully!");
+    } catch (e: any) {
+      setConnectionError(e.message || "Failed to connect.");
+      showToast(language === "vi" ? "Kết nối thất bại!" : "Connection failed!");
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
   const handleSaveSettings = (key: string, model: string) => {
-    localStorage.setItem("gemini_api_key", key);
+    localStorage.setItem("gemini_api_key", key.trim());
     localStorage.setItem("gemini_selected_model", model);
-    setApiKey(key);
+    setApiKey(key.trim());
     setSelectedModel(model);
     setShowSettingsModal(false);
     showToast(language === "vi" ? "Đã lưu cấu hình AI!" : "AI settings saved successfully!");
@@ -3483,7 +3514,17 @@ export default function App() {
             <div className="space-y-4">
               {/* API Key string input */}
               <div className="space-y-1 font-sans">
-                <label className="text-[10px] font-bold text-gray-400 uppercase">{t.labelApiKeyInput}</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">{t.labelApiKeyInput}</label>
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={isTestingConnection}
+                    className="text-[10px] font-bold text-amber-600 hover:text-amber-700 disabled:text-gray-405 transition-all cursor-pointer"
+                  >
+                    {isTestingConnection ? (language === "vi" ? "Đang kiểm tra..." : "Testing...") : (language === "vi" ? "Kiểm tra kết nối ⚡" : "Test connection ⚡")}
+                  </button>
+                </div>
                 <input 
                   type="password"
                   placeholder={t.placeholderApiKey}
@@ -3492,6 +3533,30 @@ export default function App() {
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500 placeholder-gray-400 focus:outline-none"
                 />
               </div>
+
+              {/* Connection Status/Diagnostic results */}
+              {connectionError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-[11px] text-red-700 leading-relaxed font-sans space-y-1 select-text">
+                  <p className="font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                    {language === "vi" ? "Lỗi kết nối từ Google:" : "Google Connection Error:"}
+                  </p>
+                  <p className="font-mono text-[10px] bg-white p-1.5 rounded border border-red-100 overflow-x-auto max-h-20 break-all">{connectionError}</p>
+                  <p className="opacity-90 text-[10px] text-gray-500">{language === "vi" ? "Gợi ý: Hãy đảm bảo API Key chính xác và dịch vụ Generative Language API đã được bật trong Google Cloud Project của bạn." : "Tip: Please ensure your API Key is correct and the Generative Language API is enabled in your Google Cloud Project."}</p>
+                </div>
+              )}
+
+              {availableModelsList && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-[11px] text-green-800 leading-relaxed font-sans">
+                  <p className="font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                    {language === "vi" ? "Kết nối thành công!" : "Connection successful!"}
+                  </p>
+                  <p className="mt-1 font-mono text-[9px] text-green-700 break-all">
+                    {language === "vi" ? "Models khả dụng:" : "Available models:"} {availableModelsList.slice(0, 8).join(", ")}
+                  </p>
+                </div>
+              )}
 
               {/* Model Picker Cards */}
               <div className="space-y-2 font-sans">

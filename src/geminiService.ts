@@ -1115,3 +1115,29 @@ export async function extractCurriculumFromDocument(
   const responseText = await executeWithFallback(config, systemInstruction, prompt, schema);
   return JSON.parse(responseText);
 }
+
+// 15. List all available models for an API key dynamically
+export async function listAvailableModels(apiKey: string): Promise<string[]> {
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errText = await response.text();
+      let errMsg = `HTTP ${response.status}`;
+      try {
+        const errJson = JSON.parse(errText);
+        errMsg = errJson.error?.message || errMsg;
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+    const data = await response.json();
+    const list = data.models || [];
+    return list
+      .filter((m: any) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m: any) => m.name.replace(/^models\//, "")) as string[];
+  } catch (e: any) {
+    console.error("Failed to list models:", e);
+    throw new Error(e.message || "Failed to list models.");
+  }
+}
+
