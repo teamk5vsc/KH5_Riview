@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChatMessage, LessonPlan, CambridgeStandard, UploadedDocument } from "../types";
-import { Sparkles, MessageSquare, Send, X, AlertTriangle, HelpCircle, Bot } from "lucide-react";
+import { Sparkles, MessageSquare, Send, X, AlertTriangle, HelpCircle, Bot, Paperclip, RefreshCw } from "lucide-react";
 import { TRANSLATIONS } from "../translations";
 import { chatSpecialistAI } from "../geminiService";
+import { parseDocumentFile } from "../fileParser";
 
 interface FloatingAIAssistantProps {
   activeLesson: LessonPlan | null;
@@ -27,6 +28,11 @@ export default function FloatingAIAssistant({
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  // Direct file attachment states
+  const [attachedFile, setAttachedFile] = useState<{ name: string; content: string; type: string } | null>(null);
+  const [isParsingFile, setIsParsingFile] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Initialize welcome message when language changes
@@ -49,6 +55,26 @@ export default function FloatingAIAssistant({
     }
   }, [messages, isOpen]);
 
+  const handleAttachFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsParsingFile(true);
+    setFileError(null);
+    try {
+      const parsed = await parseDocumentFile(file);
+      setAttachedFile({
+        name: file.name,
+        content: parsed.textContent,
+        type: parsed.docType
+      });
+    } catch (err: any) {
+      setFileError(err.message || "Failed to parse attachment");
+    } finally {
+      setIsParsingFile(false);
+      if (e.target) e.target.value = "";
+    }
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -58,10 +84,35 @@ export default function FloatingAIAssistant({
       sender: "user",
       text: input,
       timestamp: new Date().toLocaleTimeString(),
+      attachmentName: attachedFile ? attachedFile.name : undefined
     };
+
+    // Prepare message with file contents for AI, but keep simple text for chat display
+    const userMsgForAI = attachedFile 
+      ? { ...userMsg, text: `[TỆP ĐÍNH KÈM: ${attachedFile.name}]\n${attachedFile.content}\n\nCÂU HỎI CỦA TÔI: ${input}` }
+      : userMsg;
 
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
+    
+    // Build docs payload including the temp attachment
+    const docsToSend = attachedFile 
+      ? [
+          {
+            id: `temp_${Date.now()}`,
+            name: attachedFile.name,
+            type: attachedFile.type as any,
+            uploadedAt: new Date().toISOString(),
+            fileSize: attachedFile.content.length,
+            status: "ready" as const,
+            extractedText: attachedFile.content
+          },
+          ...documents
+        ]
+      : documents;
+
+    // Reset attachment immediately
+    setAttachedFile(null);
     setInput("");
     setIsLoading(true);
     setApiError(null);
@@ -76,11 +127,12 @@ export default function FloatingAIAssistant({
     }
 
     try {
+      const newMessagesForAI = [...messages, userMsgForAI];
       const responseText = await chatSpecialistAI(
-        newMessages.slice(-8), // Send last 8 turns
+        newMessagesForAI.slice(-8), // Send last 8 turns
         activeLesson,
         activeStandard,
-        documents,
+        docsToSend,
         {
           apiKey,
           selectedModel,
@@ -196,6 +248,16 @@ export default function FloatingAIAssistant({
                     : "bg-white text-gray-800 border border-gray-150/40 rounded-tl-none"
                 }`}
               >
+                {m.attachmentName && (
+                  <div className={`flex items-center gap-1 text-[9px] mb-1.5 px-2 py-0.5 rounded border font-mono select-none ${
+                    m.sender === "user"
+                      ? "bg-white/10 text-gray-200 border-white/20"
+                      : "bg-amber-50 text-amber-900 border-amber-200/50"
+                  }`}>
+                    <Paperclip className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                    <span className="truncate max-w-[150px] font-semibold">{m.attachmentName}</span>
+                  </div>
+                )}
                 <p className="whitespace-pre-wrap font-sans">{m.text}</p>
               </div>
               <span className="text-[8px] text-gray-400 mt-1 font-mono px-1">
@@ -225,23 +287,73 @@ export default function FloatingAIAssistant({
             </div>
           </div>
         )}
+        {isParsingFile && (
+          <div className="p-2 bg-gray-50 border border-gray-150 text-[10px] text-gray-500 rounded-lg flex items-center gap-2 select-none mx-2 mb-2">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-500" />
+            <span>{language === "vi" ? "AI đang nạp tài liệu..." : "AI parsing reference..."}</span>
+          </div>
+        )}
+
+        {fileError && (
+          <div className="p-2.5 bg-red-50 border border-red-100 text-[10px] text-red-800 rounded-lg flex gap-2 items-start mx-2 mb-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+            <span>{fileError}</span>
+          </div>
+        )}
+
+        {attachedFile && (
+          <div className="p-2 bg-amber-55/10 border border-amber-200 text-[10px] text-amber-900 rounded-lg flex items-center justify-between mx-2 mb-2 select-none">
+            <div className="flex items-center gap-1.5 truncate">
+              <Paperclip className="w-3 h-3 text-amber-500" />
+              <span className="truncate font-semibold max-w-[150px]">{attachedFile.name}</span>
+              <span className="text-[8px] bg-amber-100 text-amber-800 px-1 py-0.2 rounded font-mono font-bold uppercase">AI Loaded</span>
+            </div>
+            <button 
+              type="button" 
+              onClick={() => setAttachedFile(null)} 
+              className="text-amber-600 hover:text-amber-850 p-0.5 rounded cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
       {/* Form Input */}
-      <form onSubmit={handleSend} className="p-3 border-t border-gray-100 bg-white flex gap-2">
+      <form onSubmit={handleSend} className="p-3 border-t border-gray-100 bg-white flex gap-2 items-center select-none shrink-0">
+        {/* Attachment button */}
+        <label 
+          className={`w-9 h-9 rounded-xl border flex items-center justify-center cursor-pointer transition-all shrink-0 ${
+            attachedFile 
+              ? "bg-amber-100 border-amber-300 text-amber-600 animate-pulse" 
+              : "bg-gray-55 border-gray-200 text-gray-400 hover:text-gray-650"
+          }`}
+          title={language === "vi" ? "Đính kèm tệp cho AI đọc" : "Attach file for AI Grounding"}
+        >
+          <Paperclip className="w-4 h-4" />
+          <input 
+            type="file" 
+            accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.md,.json" 
+            onChange={handleAttachFile} 
+            className="hidden" 
+            disabled={isLoading || isParsingFile}
+          />
+        </label>
+
         <input
           type="text"
           placeholder={language === "vi" ? "Hỏi trợ lý về giáo án, chuẩn dạy..." : "Ask specialist to review, draft questions..."}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:ring-1 focus:ring-amber-500/20 focus:border-amber-500 placeholder-gray-400 text-gray-700"
-          disabled={isLoading}
+          className="flex-1 bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:ring-1 focus:ring-amber-500/20 focus:border-amber-500 placeholder-gray-400 text-gray-700"
+          disabled={isLoading || isParsingFile}
         />
         <button
           type="submit"
-          disabled={!input.trim() || isLoading}
-          className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center hover:bg-amber-600 disabled:bg-gray-100 disabled:text-gray-400 transition-colors shrink-0"
+          disabled={(!input.trim() && !attachedFile) || isLoading || isParsingFile}
+          className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center hover:bg-amber-600 disabled:bg-gray-100 disabled:text-gray-400 transition-colors shrink-0 cursor-pointer shadow-sm"
         >
           <Send className="w-3.5 h-3.5" />
         </button>

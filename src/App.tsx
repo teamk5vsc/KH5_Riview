@@ -30,7 +30,8 @@ import {
   UploadCloud,
   FileSpreadsheet,
   Send,
-  MessageSquare
+  MessageSquare,
+  Presentation
 } from "lucide-react";
 import { TRANSLATIONS } from "./translations";
 import { 

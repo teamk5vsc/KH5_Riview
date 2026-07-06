@@ -1,4 +1,4 @@
-export type GradeLevel = 1 | 2 | 3 | 4 | 5;
+export type GradeLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface CambridgeStandard {
   id: string; // e.g. 5Bi_01
@@ -90,4 +90,5 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   contextLessonId?: string;
+  attachmentName?: string;
 }
