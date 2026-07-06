@@ -83,6 +83,19 @@ const DEFAULT_DOCUMENTS: UploadedDocument[] = [
 ];
 
 export default function App() {
+  // Safe localStorage JSON parser
+  const getLocalStorageJson = <T,>(key: string, fallback: T): T => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved && saved !== "undefined" && saved !== "null") {
+        return JSON.parse(saved) as T;
+      }
+    } catch (e) {
+      console.error(`Error parsing localStorage key "${key}":`, e);
+    }
+    return fallback;
+  };
+
   // Global Bilingual & Credentials state
   const [language, setLanguage] = useState<"vi" | "en">(() => {
     return (localStorage.getItem("app_language") as "vi" | "en") || "vi";
@@ -140,21 +153,17 @@ export default function App() {
 
   // Active curriculum datasets (persisted in client state)
   const [lessons, setLessons] = useState<LessonPlan[]>(() => {
-    const saved = localStorage.getItem("curriculum_lessons");
-    return saved ? JSON.parse(saved) : VINSCHOOL_LESSONS_DB;
+    return getLocalStorageJson<LessonPlan[]>("curriculum_lessons", VINSCHOOL_LESSONS_DB);
   });
   const [standards, setStandards] = useState<CambridgeStandard[]>(() => {
-    const saved = localStorage.getItem("curriculum_standards");
-    return saved ? JSON.parse(saved) : CAMBRIDGE_STANDARDS_DB;
+    return getLocalStorageJson<CambridgeStandard[]>("curriculum_standards", CAMBRIDGE_STANDARDS_DB);
   });
   const [selectedLessonId, setSelectedLessonId] = useState<string>(() => {
-    const saved = localStorage.getItem("curriculum_lessons");
-    const list = saved ? JSON.parse(saved) : VINSCHOOL_LESSONS_DB;
+    const list = getLocalStorageJson<LessonPlan[]>("curriculum_lessons", VINSCHOOL_LESSONS_DB);
     return list[0]?.id || "";
   });
   const [selectedStandardId, setSelectedStandardId] = useState<string>(() => {
-    const saved = localStorage.getItem("curriculum_standards");
-    const list = saved ? JSON.parse(saved) : CAMBRIDGE_STANDARDS_DB;
+    const list = getLocalStorageJson<CambridgeStandard[]>("curriculum_standards", CAMBRIDGE_STANDARDS_DB);
     return list[0]?.id || "";
   });
 
@@ -164,13 +173,11 @@ export default function App() {
 
   // Split-Screen Reference Document states
   const [documents, setDocuments] = useState<UploadedDocument[]>(() => {
-    const saved = localStorage.getItem("uploaded_documents");
-    return saved ? JSON.parse(saved) : DEFAULT_DOCUMENTS;
+    return getLocalStorageJson<UploadedDocument[]>("uploaded_documents", DEFAULT_DOCUMENTS);
   });
   const [isSplitReaderOpen, setIsSplitReaderOpen] = useState(false);
   const [selectedDocIdReader, setSelectedDocIdReader] = useState<string>(() => {
-    const saved = localStorage.getItem("uploaded_documents");
-    const docs = saved ? JSON.parse(saved) : DEFAULT_DOCUMENTS;
+    const docs = getLocalStorageJson<UploadedDocument[]>("uploaded_documents", DEFAULT_DOCUMENTS);
     return docs[0]?.id || "";
   });
   
@@ -204,8 +211,14 @@ export default function App() {
   } | null>(null);
 
   // Comparative module states
-  const [compareIdA, setCompareIdA] = useState<string>(VINSCHOOL_LESSONS_DB[0].id);
-  const [compareIdB, setCompareIdB] = useState<string>(VINSCHOOL_LESSONS_DB[1]?.id || VINSCHOOL_LESSONS_DB[0].id);
+  const [compareIdA, setCompareIdA] = useState<string>(() => {
+    const list = getLocalStorageJson<LessonPlan[]>("curriculum_lessons", VINSCHOOL_LESSONS_DB);
+    return list[0]?.id || "";
+  });
+  const [compareIdB, setCompareIdB] = useState<string>(() => {
+    const list = getLocalStorageJson<LessonPlan[]>("curriculum_lessons", VINSCHOOL_LESSONS_DB);
+    return list[1]?.id || list[0]?.id || "";
+  });
   const [compareResult, setCompareResult] = useState<any | null>(null);
   const [isComparing, setIsComparing] = useState(false);
 
@@ -230,8 +243,7 @@ export default function App() {
   const [totalWeeks, setTotalWeeks] = useState<number>(35);
   const [periodsPerWeek, setPeriodsPerWeek] = useState<number>(3); // Set to 3 as per user request
   const [frameworkTopics, setFrameworkTopics] = useState<any[]>(() => {
-    const saved = localStorage.getItem("framework_topics");
-    return saved ? JSON.parse(saved) : [
+    return getLocalStorageJson<any[]>("framework_topics", [
       {
         id: "topic_1",
         name: "Topic 1: Life Processes and Cells",
@@ -1171,7 +1183,7 @@ export default function App() {
                   <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 font-sans">
                     <h4 className="text-xs font-bold text-gray-700 font-mono mb-2">{t.activeMappedStandards}</h4>
                     <div className="space-y-2">
-                      {activeLesson?.mappedCambridgeStandards.map((code) => {
+                      {activeLesson?.mappedCambridgeStandards?.map((code) => {
                         const std = standards.find(s => s.code === code);
                         return (
                           <div key={code} className="bg-white border border-gray-200 p-2.5 rounded-lg text-xs flex justify-between items-start font-sans">
@@ -1192,7 +1204,7 @@ export default function App() {
                           </div>
                         );
                       })}
-                      {(!activeLesson || activeLesson.mappedCambridgeStandards.length === 0) && (
+                      {(!activeLesson || !activeLesson.mappedCambridgeStandards || activeLesson.mappedCambridgeStandards.length === 0) && (
                         <p className="text-xs text-gray-400 italic">{t.noStandardsMapped}</p>
                       )}
                     </div>
@@ -1204,7 +1216,7 @@ export default function App() {
               <div className="col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden h-140">
                 <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
                   <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans font-sans">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 font-mono font-sans">
                       Stage {gradeFilter} Cambridge Standards
                     </h3>
                     <h2 className="text-sm font-bold text-gray-800 mt-0.5">{t.frameworkDirectory}</h2>
@@ -1215,7 +1227,7 @@ export default function App() {
                   {standards
                     .filter(s => s.stage === gradeFilter)
                     .map((std) => {
-                      const isMapped = activeLesson?.mappedCambridgeStandards.includes(std.code);
+                      const isMapped = activeLesson?.mappedCambridgeStandards?.includes(std.code) || false;
                       return (
                         <div 
                           key={std.id}
