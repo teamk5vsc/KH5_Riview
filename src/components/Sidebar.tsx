@@ -9,7 +9,8 @@ import {
   FileText, 
   Database, 
   GitCompare, 
-  GraduationCap
+  GraduationCap,
+  Presentation
 } from "lucide-react";
 import { TRANSLATIONS } from "../translations";
 
@@ -21,6 +22,7 @@ export type TabType =
   | "guidance-gen" 
   | "remediation"
   | "notebook"
+  | "lesson-builder"
   | "gap-analysis" 
   | "comparator" 
   | "documents"
@@ -84,6 +86,12 @@ export default function Sidebar({
       id: "notebook" as TabType,
       label: language === "vi" ? "Notebook chuyên sâu" : "NotebookLM Workspace",
       icon: BookOpen,
+      section: "AI COPROCESSOR"
+    },
+    {
+      id: "lesson-builder" as TabType,
+      label: language === "vi" ? "Soạn Giáo án & Slide" : "Lesson & Slide Builder",
+      icon: Presentation,
       section: "AI COPROCESSOR"
     },
     {

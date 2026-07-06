@@ -43,7 +43,9 @@ import {
   auditCurriculumFramework,
   generateRemediationPlan,
   chatNotebookLM,
-  generateNotebookNotes
+  generateNotebookNotes,
+  generateCustomLessonPlan,
+  generateSlidesFromLesson
 } from "./geminiService";
 import { parseDocumentFile } from "./fileParser";
 
@@ -266,6 +268,17 @@ export default function App() {
     }
   }, [documents]);
 
+  // Lesson & Slide Builder states
+  const [customObjectives, setCustomObjectives] = useState("");
+  const [customSampleDocId, setCustomSampleDocId] = useState("");
+  const [customPedagogicalPrompt, setCustomPedagogicalPrompt] = useState("");
+  const [generatedCustomLessonPlanText, setGeneratedCustomLessonPlanText] = useState<string | null>(null);
+  const [isDraftingCustomLesson, setIsDraftingCustomLesson] = useState(false);
+  const [generatedSlides, setGeneratedSlides] = useState<any[]>([]);
+  const [isGeneratingSlides, setIsGeneratingSlides] = useState(false);
+  const [activeSlideIndex, setActiveSlideIndex] = useState(0);
+  const [customActiveSubTab, setCustomActiveSubTab] = useState<'lesson' | 'slides'>('lesson');
+
   // Persist settings
   const handleSaveSettings = (key: string, model: string) => {
     localStorage.setItem("gemini_api_key", key);
@@ -482,6 +495,51 @@ export default function App() {
       showToast(language === "vi" ? "Đã tổng hợp tài liệu đối chiếu thành công!" : "Ingested sources successfully synthesized!");
     }).finally(() => {
       setIsGeneratingNotebookNotes(false);
+    });
+  };
+
+  const handleDraftCustomLesson = () => {
+    if (!customObjectives.trim()) {
+      showToast(language === "vi" ? "Vui lòng nhập mục tiêu bài học!" : "Please provide learning objectives!");
+      return;
+    }
+    setIsDraftingCustomLesson(true);
+    setGeneratedCustomLessonPlanText(null);
+    setGeneratedSlides([]);
+    setActiveSlideIndex(0);
+
+    const sampleDoc = documents.find(d => d.id === customSampleDocId);
+    const sampleText = sampleDoc ? sampleDoc.extractedText : "";
+
+    handleAICallWrapper(async () => {
+      const plan = await generateCustomLessonPlan(
+        customObjectives,
+        sampleText,
+        customPedagogicalPrompt,
+        getAIConfig()
+      );
+      setGeneratedCustomLessonPlanText(plan);
+      setCustomActiveSubTab('lesson');
+      showToast(language === "vi" ? "Đã soạn thảo giáo án học thuật!" : "Lesson plan drafted successfully!");
+    }).finally(() => {
+      setIsDraftingCustomLesson(false);
+    });
+  };
+
+  const handleGenerateSlides = () => {
+    if (!generatedCustomLessonPlanText) return;
+    setIsGeneratingSlides(true);
+
+    handleAICallWrapper(async () => {
+      const data = await generateSlidesFromLesson(generatedCustomLessonPlanText, getAIConfig());
+      if (data && data.slides) {
+        setGeneratedSlides(data.slides);
+        setActiveSlideIndex(0);
+        setCustomActiveSubTab('slides');
+        showToast(language === "vi" ? "Đã tạo slide bài giảng thành công!" : "Presentation slides created!");
+      }
+    }).finally(() => {
+      setIsGeneratingSlides(false);
     });
   };
 
@@ -1932,6 +1990,319 @@ export default function App() {
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+
+            </div>
+          )}
+          {/* TAB 12: CUSTOM LESSON & SLIDE PRESENTATION BUILDER */}
+          {currentTab === "lesson-builder" && (
+            <div className="max-w-5xl mx-auto grid grid-cols-12 gap-6 h-[calc(100vh-180px)] select-none">
+              
+              {/* Left Pane: Config Inputs (5/12 width) */}
+              <div className="col-span-5 bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col h-full overflow-y-auto font-sans space-y-4">
+                <div>
+                  <h2 className="text-xs font-bold text-gray-900 flex items-center gap-1.5 font-mono uppercase tracking-wide">
+                    <Presentation className="w-4 h-4 text-amber-500" />
+                    {language === "vi" ? "Thiết Lập Soạn Giáo Án" : "Lesson Plan Builder Config"}
+                  </h2>
+                  <p className="text-[9px] text-gray-400 mt-0.5">
+                    {language === "vi" ? "Điền mục tiêu và tải tài liệu mẫu để AI dựng bài" : "Input requirements and sample to auto-draft"}
+                  </p>
+                </div>
+
+                {/* Objectives */}
+                <div className="space-y-1">
+                  <label className="text-[9.5px] font-bold text-gray-400 uppercase tracking-wider block font-mono">
+                    {language === "vi" ? "Mục tiêu học tập chính (Objectives)" : "Learning Objectives"}
+                  </label>
+                  <textarea
+                    placeholder={language === "vi" ? "Ví dụ: Học sinh hiểu cấu trúc hệ tuần hoàn, phân biệt động mạch và tĩnh mạch, đo được nhịp tim..." : "e.g. Describe the circulatory system and differentiate veins and arteries..."}
+                    value={customObjectives}
+                    onChange={(e) => setCustomObjectives(e.target.value)}
+                    className="w-full h-24 bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500 placeholder-gray-400 focus:outline-none resize-none"
+                  />
+                </div>
+
+                {/* Sample Document dropdown selector */}
+                <div className="space-y-1">
+                  <label className="text-[9.5px] font-bold text-gray-400 uppercase tracking-wider block font-mono">
+                    {language === "vi" ? "Cấu trúc Giáo án mẫu (Reference Sample)" : "Reference Sample Structure"}
+                  </label>
+                  <select
+                    value={customSampleDocId}
+                    onChange={(e) => setCustomSampleDocId(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-250 rounded-xl px-3 py-2 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                  >
+                    <option value="">{language === "vi" ? "— Sử dụng định dạng mẫu chuẩn của hệ thống —" : "— Use standard platform template —"}</option>
+                    {documents.map(doc => (
+                      <option key={doc.id} value={doc.id}>
+                        {doc.name} ({(doc.fileSize / 1000).toFixed(0)} KB)
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[8.5px] text-gray-400 block mt-0.5 leading-normal">
+                    {language === "vi" ? "AI sẽ bắt chước chính xác phong cách thiết kế của tệp này." : "AI will replicate the layout and style of the selected file."}
+                  </span>
+                </div>
+
+                {/* Custom Prompt */}
+                <div className="space-y-1">
+                  <label className="text-[9.5px] font-bold text-gray-400 uppercase tracking-wider block font-mono">
+                    {language === "vi" ? "Yêu cầu sư phạm riêng (Custom Prompts)" : "Custom Prompts & Requests"}
+                  </label>
+                  <textarea
+                    placeholder={language === "vi" ? "Ví dụ: Giáo án dài 80 phút, chia 3 phần hoạt động cụ thể, bổ sung 1 trò chơi Hook 10 phút, tích hợp câu hỏi suy luận của Vinschool..." : "e.g. 80-minute lesson, include a 10m Hook game, map specific TWS lab experiments..."}
+                    value={customPedagogicalPrompt}
+                    onChange={(e) => setCustomPedagogicalPrompt(e.target.value)}
+                    className="w-full h-24 bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs text-gray-700 focus:ring-1 focus:ring-amber-500 placeholder-gray-400 focus:outline-none resize-none"
+                  />
+                </div>
+
+                {/* Action button */}
+                <button
+                  onClick={handleDraftCustomLesson}
+                  disabled={isDraftingCustomLesson || !customObjectives.trim()}
+                  className="w-full py-2.5 bg-[#18181b] hover:bg-[#27272a] disabled:bg-gray-150 disabled:text-gray-400 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer mt-2 shrink-0"
+                >
+                  {isDraftingCustomLesson ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>{language === "vi" ? "AI đang soạn thảo Giáo án..." : "AI drafting Lesson..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{language === "vi" ? "Soạn thảo Giáo án AI" : "Draft AI Lesson Plan"}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Right Pane: Output Workspace & Slides Presentation View (7/12 width) */}
+              <div className="col-span-7 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
+                
+                {/* Header sub-tabs */}
+                <div className="flex border-b border-gray-100 bg-gray-50 shrink-0">
+                  <button
+                    onClick={() => setCustomActiveSubTab('lesson')}
+                    className={`flex-1 py-3 text-xs font-bold border-b-2 flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      customActiveSubTab === 'lesson'
+                        ? "border-amber-500 text-amber-900 bg-white"
+                        : "border-transparent text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>{language === "vi" ? "Giáo án học thuật (Word)" : "Word Lesson Plan"}</span>
+                  </button>
+                  <button
+                    onClick={() => setCustomActiveSubTab('slides')}
+                    className={`flex-1 py-3 text-xs font-bold border-b-2 flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      customActiveSubTab === 'slides'
+                        ? "border-amber-500 text-amber-900 bg-white"
+                        : "border-transparent text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    <Presentation className="w-4 h-4" />
+                    <span>{language === "vi" ? "Bài trình bày Slide" : "Presentation Slides"}</span>
+                  </button>
+                </div>
+
+                {/* Output content area */}
+                <div className="flex-1 overflow-hidden relative p-5 flex flex-col">
+                  
+                  {/* SUBTAB: Lesson plan draft text */}
+                  {customActiveSubTab === 'lesson' && (
+                    <div className="h-full flex flex-col overflow-hidden">
+                      {generatedCustomLessonPlanText ? (
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                          <div className="flex justify-between items-center border-b border-gray-150 pb-2.5 mb-3 shrink-0">
+                            <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wide">
+                              {language === "vi" ? "Văn bản Giáo án soạn theo mẫu" : "Drafted Word Lesson Plan (Grounded)"}
+                            </span>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={handleGenerateSlides}
+                                disabled={isGeneratingSlides}
+                                className="px-2.5 py-1 text-[10px] font-bold text-amber-955 bg-amber-500 hover:bg-amber-600 text-white rounded border border-amber-500 shadow-sm transition-all cursor-pointer flex items-center gap-1"
+                              >
+                                {isGeneratingSlides ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Presentation className="w-3 h-3" />}
+                                <span>{language === "vi" ? "Chuyển thành Slide" : "Convert to Slides"}</span>
+                              </button>
+                              <button
+                                onClick={() => copyText(generatedCustomLessonPlanText)}
+                                className="px-2.5 py-1 text-[10px] font-bold text-gray-700 bg-gray-50 hover:bg-gray-100 rounded border border-gray-250 transition-all cursor-pointer flex items-center gap-1"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>{language === "vi" ? "Sao chép" : "Copy"}</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex-1 border border-gray-250 bg-gray-50/20 rounded-xl overflow-y-auto p-4 select-text font-sans leading-relaxed text-xs space-y-2 whitespace-pre-wrap">
+                            {generatedCustomLessonPlanText.split('\n').map((line, lineIdx) => {
+                              if (line.startsWith('# ')) {
+                                return <h1 key={lineIdx} className="text-sm font-bold text-gray-900 mt-3 border-b border-gray-150 pb-1">{line.replace('# ', '')}</h1>;
+                              }
+                              if (line.startsWith('## ')) {
+                                return <h2 key={lineIdx} className="text-xs font-bold text-gray-800 mt-2.5">{line.replace('## ', '')}</h2>;
+                              }
+                              if (line.startsWith('### ')) {
+                                return <h3 key={lineIdx} className="text-[11px] font-bold text-gray-700 mt-2">{line.replace('### ', '')}</h3>;
+                              }
+                              if (line.startsWith('* ') || line.startsWith('- ')) {
+                                return <li key={lineIdx} className="ml-4 list-disc mt-0.5">{line.substring(2)}</li>;
+                              }
+                              return <p key={lineIdx} className="mt-0.5">{line}</p>;
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-center p-8 max-w-sm mx-auto space-y-3 text-gray-400">
+                          <FileText className="w-10 h-10 text-amber-400 animate-pulse" />
+                          <div>
+                            <h4 className="text-xs font-bold text-gray-700">
+                              {language === "vi" ? "Khu vực hiển thị Giáo án" : "Lesson Plan Board"}
+                            </h4>
+                            <p className="text-[10px] text-gray-400 leading-relaxed mt-1">
+                              {language === "vi" 
+                                ? "Điền các yêu cầu cấu hình ở cột bên trái và bấm 'Soạn thảo Giáo án AI' để sinh giáo án Word mẫu."
+                                : "Fill out configuration on the left and click 'Draft AI Lesson Plan' to construct Word documentation."}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SUBTAB: Presentation Slides Viewer */}
+                  {customActiveSubTab === 'slides' && (
+                    <div className="h-full flex flex-col overflow-hidden">
+                      {isGeneratingSlides && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-8 bg-white/80 backdrop-blur-xs select-none z-20">
+                          <RefreshCw className="w-8 h-8 text-amber-500 animate-spin mb-3" />
+                          <p className="text-xs font-semibold text-gray-700">{language === "vi" ? "AI đang biên soạn thiết kế slide..." : "AI modeling slide layout..."}</p>
+                          <p className="text-[10px] text-gray-400 mt-1 font-mono">Structuring Presentation Cards</p>
+                        </div>
+                      )}
+
+                      {generatedSlides.length > 0 ? (
+                        <div className="flex-1 flex flex-col justify-between">
+                          {/* Presenter Mode Slides Board */}
+                          <div className="flex-1 flex flex-col justify-center p-2">
+                            {(() => {
+                              const slide = generatedSlides[activeSlideIndex];
+                              if (!slide) return null;
+                              return (
+                                <div className="w-full aspect-[16/9] bg-[#18181b] rounded-2xl shadow-xl border border-amber-500/20 p-8 flex flex-col justify-between text-white relative overflow-hidden font-sans select-text">
+                                  {/* Sci-fi glow lines decor */}
+                                  <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600" />
+                                  <div className="absolute -bottom-16 -right-16 w-48 h-48 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+
+                                  {/* Slide header */}
+                                  <div className="flex justify-between items-start">
+                                    <div className="space-y-0.5">
+                                      <h2 className="text-lg font-bold text-amber-400 select-text leading-tight">{slide.title}</h2>
+                                      {slide.subtitle && <p className="text-[11px] text-gray-400 italic select-text">{slide.subtitle}</p>}
+                                    </div>
+                                    <span className="px-2 py-0.5 bg-white/10 text-[9px] font-bold font-mono rounded text-gray-300">
+                                      SLIDE {slide.slideNumber} / {generatedSlides.length}
+                                    </span>
+                                  </div>
+
+                                  {/* Slide content bullets */}
+                                  <div className="my-auto py-2 grid grid-cols-1 gap-2.5 max-h-[60%] overflow-y-auto">
+                                    {slide.contentPoints.map((pt: string, ptIdx: number) => (
+                                      <div key={ptIdx} className="flex items-start gap-2.5 text-xs text-gray-250 select-text">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0 animate-pulse" />
+                                        <p className="leading-relaxed">{pt}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {/* Slide footer metadata / visual notes */}
+                                  <div className="flex justify-between items-center border-t border-white/10 pt-3 text-[9px] text-gray-400 font-mono">
+                                    {slide.twsFocus ? (
+                                      <span className="inline-flex items-center gap-1 bg-sky-950 text-sky-300 px-2 py-0.5 rounded border border-sky-900/50">
+                                        🎯 TWS Focus: {slide.twsFocus}
+                                      </span>
+                                    ) : (
+                                      <span />
+                                    )}
+                                    {slide.visualCues && (
+                                      <span className="text-right italic truncate max-w-[200px]">
+                                        🎬 Visual: {slide.visualCues}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          {/* Navigation Panel */}
+                          <div className="flex justify-between items-center border-t border-gray-150 pt-4 shrink-0 select-none mt-2">
+                            <button
+                              onClick={() => setActiveSlideIndex(prev => Math.max(0, prev - 1))}
+                              disabled={activeSlideIndex === 0}
+                              className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 disabled:opacity-40 border border-gray-200 text-gray-700 text-xs font-semibold rounded-xl cursor-pointer transition-all"
+                            >
+                              {language === "vi" ? "◀ Slide trước" : "◀ Prev Slide"}
+                            </button>
+
+                            {/* Center Dots */}
+                            <div className="flex items-center gap-1.5">
+                              {generatedSlides.map((_, idx) => (
+                                <button
+                                  key={idx}
+                                  onClick={() => setActiveSlideIndex(idx)}
+                                  className={`w-2 h-2 rounded-full transition-all cursor-pointer ${
+                                    activeSlideIndex === idx ? "bg-amber-500 scale-125" : "bg-gray-200 hover:bg-gray-350"
+                                  }`}
+                                />
+                              ))}
+                            </div>
+
+                            <button
+                              onClick={() => setActiveSlideIndex(prev => Math.min(generatedSlides.length - 1, prev + 1))}
+                              disabled={activeSlideIndex === generatedSlides.length - 1}
+                              className="px-3 py-1.5 bg-[#18181b] hover:bg-[#27272a] disabled:opacity-40 text-white text-xs font-semibold rounded-xl cursor-pointer transition-all"
+                            >
+                              {language === "vi" ? "Slide tiếp theo ▶" : "Next Slide ▶"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-center p-8 max-w-sm mx-auto space-y-3.5 text-gray-400">
+                          <Presentation className="w-10 h-10 text-amber-400 animate-pulse" />
+                          <div>
+                            <h4 className="text-xs font-bold text-gray-700">
+                              {language === "vi" ? "Kiến tạo Slide Bài giảng" : "Presentation Slides Board"}
+                            </h4>
+                            <p className="text-[10px] text-gray-400 leading-relaxed mt-1">
+                              {generatedCustomLessonPlanText 
+                                ? (language === "vi" 
+                                    ? "Bấm nút 'Chuyển thành Slide' ở Tab Giáo án hoặc bấm nút sinh slide dưới đây để AI phân tích cấu trúc bài học và dựng các thẻ slide trình bày."
+                                    : "Click 'Convert to Slides' in the Lesson Plan tab to generate presentation slides.")
+                                : (language === "vi" 
+                                    ? "Vui lòng hoàn tất soạn thảo giáo án học thuật ở tab bên cạnh trước khi sinh slide bài giảng."
+                                    : "Please draft your lesson plan on the adjacent tab before generating slides.")}
+                            </p>
+                            {generatedCustomLessonPlanText && (
+                              <button
+                                onClick={handleGenerateSlides}
+                                className="mt-4 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow cursor-pointer transition-all flex items-center gap-1.5 mx-auto"
+                              >
+                                <Presentation className="w-3.5 h-3.5" />
+                                <span>{language === "vi" ? "Sinh Slide Bài giảng" : "Generate Slides Now"}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 

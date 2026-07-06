@@ -112,7 +112,7 @@ export default function FloatingAIAssistant({
       <button
         onClick={onToggle}
         id="btn-open-assistant"
-        className="fixed bottom-6 right-6 z-40 h-11 w-fit px-3 bg-gradient-to-tr from-[#18181b] to-[#27272a] hover:from-[#27272a] hover:to-[#3f3f46] text-white shadow-2xl rounded-full flex items-center gap-2 border border-amber-500/30 hover:border-amber-400 transition-all duration-300 relative group scale-105"
+        className="fixed bottom-6 right-6 z-40 h-11 w-fit px-3 bg-gradient-to-tr from-[#18181b] to-[#27272a] hover:from-[#27272a] hover:to-[#3f3f46] text-white shadow-2xl rounded-full flex items-center gap-2 border border-amber-500/30 hover:border-amber-400 transition-all duration-300 group scale-105"
       >
         {/* Pulsing glow ring */}
         <span className="absolute inset-0 rounded-full bg-amber-500/20 animate-ping opacity-75 pointer-events-none" />
@@ -129,7 +129,7 @@ export default function FloatingAIAssistant({
 
   return (
     <div 
-      className="fixed bottom-6 right-6 z-40 w-96 h-128 bg-white border border-gray-200 rounded-3xl shadow-2xl flex flex-col overflow-hidden font-sans border-t-4 border-t-amber-500"
+      className="fixed bottom-6 right-6 z-40 w-96 h-128 max-h-[calc(100vh-80px)] bg-white border border-gray-200 rounded-3xl shadow-2xl flex flex-col overflow-hidden font-sans border-t-4 border-t-amber-500"
     >
       {/* Header Banner */}
       <div className="bg-[#18181b] p-4 border-b border-[#27272a] text-white flex items-center justify-between shadow-md">

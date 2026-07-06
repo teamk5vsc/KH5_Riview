@@ -922,3 +922,93 @@ export async function generateNotebookNotes(
     prompt
   );
 }
+
+// 12. Generate Lesson Plan based on sample document, objectives and custom prompts
+export async function generateCustomLessonPlan(
+  objectives: string,
+  sampleLessonPlanText: string,
+  customPrompt: string,
+  config: RequestConfig
+): Promise<string> {
+  const langLabel = config.language === "vi" ? "Vietnamese" : "English";
+
+  const systemInstruction = `
+    You are an elite Vinschool Science Lesson Designer. Your goal is to draft a comprehensive, high-quality, professional lesson plan in Word document format (outputted as markdown).
+    
+    IMPORTANT RULES:
+    1. Base the formatting, structure, and depth on the provided Sample Lesson Plan.
+    2. Incorporate the specified Learning Objectives.
+    3. Strictly follow the user's Custom Prompts and requests (e.g., duration, specific TWS labs, activities).
+    4. Write in ${langLabel} language in structured, publication-grade markdown format.
+  `;
+
+  const prompt = `
+    Learning Objectives:
+    ${objectives}
+
+    Sample Lesson Plan Structure Reference:
+    ${sampleLessonPlanText || "No sample provided. Use standard high-quality Vinschool lesson plan formatting (Unit, Objectives, TWS elements, Activity sequence, Plenary)."}
+
+    Custom Requests / Pedagogical Prompt:
+    ${customPrompt}
+
+    Please write the complete lesson plan now. Include clear headers, time allocation (e.g. 5m Hook, 15m Direct Instruction, 20m Lab), TWS mapping, and expected answers.
+  `;
+
+  return callGeminiRaw(
+    config.selectedModel || "gemini-3-flash-preview",
+    config.apiKey,
+    systemInstruction,
+    prompt
+  );
+}
+
+// 13. Convert Lesson Plan text into Structured Presentation Slides (JSON)
+export async function generateSlidesFromLesson(
+  lessonPlanText: string,
+  config: RequestConfig
+): Promise<{ slides: { title: string; subtitle?: string; slideNumber: number; contentPoints: string[]; visualCues?: string; twsFocus?: string }[] }> {
+  const langLabel = config.language === "vi" ? "Vietnamese" : "English";
+
+  const systemInstruction = `
+    You are an expert presentation designer. Your task is to transform a detailed lesson plan text into a structured, highly engaging slide deck.
+    Analyze the lesson plan, extract key milestones (Hook, Lesson Objectives, Core Concepts, Activity steps, TWS Lab instructions, Assessment, Plenary), and map them to slides.
+    
+    Strictly output in JSON schema format matching the requested structure. Keep bullet points concise and slide-friendly. Write in ${langLabel} language.
+  `;
+
+  const prompt = `
+    Lesson Plan Text to convert:
+    ${lessonPlanText}
+
+    Please generate a structured slide deck (ideally 5 to 8 slides) summarizing the lesson plan. For each slide, write a title, optional subtitle, list of concise content bullets, and optional visual cues (suggestions for graphics) or TWS scientific skills highlighted on that slide.
+  `;
+
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      slides: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            title: { type: "STRING" },
+            subtitle: { type: "STRING" },
+            slideNumber: { type: "INTEGER" },
+            contentPoints: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            },
+            visualCues: { type: "STRING" },
+            twsFocus: { type: "STRING" }
+          },
+          required: ["title", "slideNumber", "contentPoints"]
+        }
+      }
+    },
+    required: ["slides"]
+  };
+
+  const responseText = await executeWithFallback(config, systemInstruction, prompt, schema);
+  return JSON.parse(responseText);
+}
