@@ -32,11 +32,11 @@ export const TRANSLATIONS = {
     // Sidebar Tabs
     tabExplorer: "Trình duyệt chương trình",
     tabMapping: "Bản đồ chuẩn Cambridge",
-    tabAuditor: "Thẩm định Độ tương thích & Kiểm định Giáo án",
-    tabQuestionGen: "Trình xây dựng Câu hỏi Truy vấn Khoa học",
-    tabGuidanceGen: "Hướng dẫn Sư phạm & Phòng ngừa Sai lệch",
-    tabGapAnalysis: "Phân tích Khoảng trống Chương trình đối chiếu",
-    tabComparator: "Đối chiếu Song song & Tối ưu hóa Giáo án",
+    tabAuditor: "Thẩm định Giáo án",
+    tabQuestionGen: "Thiết kế Câu hỏi Truy vấn",
+    tabGuidanceGen: "Chỉ dẫn Sư phạm & Ngộ nhận",
+    tabGapAnalysis: "Phân tích Khoảng trống",
+    tabComparator: "Đối chiếu song song",
     tabDocuments: "Kho tri thức nghiên cứu",
     tabScheduler: "Thiết kế Khung chương trình",
     

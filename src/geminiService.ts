@@ -826,3 +826,99 @@ export async function generateRemediationPlan(
   const responseText = await executeWithFallback(config, systemInstruction, prompt, schema);
   return JSON.parse(responseText);
 }
+
+// 10. NotebookLM Grounded Q&A Chat
+export async function chatNotebookLM(
+  messages: ChatMessage[],
+  selectedDocuments: UploadedDocument[],
+  promptText: string,
+  config: RequestConfig
+): Promise<string> {
+  const langLabel = config.language === "vi" ? "Vietnamese" : "English";
+
+  // Build the source context
+  let sourceContext = "";
+  for (const doc of selectedDocuments) {
+    if (doc.status !== "ready") continue;
+    sourceContext += `[DOCUMENT: ${doc.name}]\n${doc.extractedText}\n\n`;
+  }
+
+  const systemInstruction = `
+    You are an advanced NotebookLM-style Research and Curriculum Specialist Assistant.
+    Your primary goal is to help teachers and curriculum designers analyze and query the uploaded reference documents.
+    
+    CRITICAL RULES:
+    1. Answer the user's question using ONLY the facts and data present in the provided source documents.
+    2. If the answer cannot be found in the documents, state politely that the provided source documents do not contain this information. Do not make up facts.
+    3. You MUST provide inline citations in your text referencing the document name in brackets, e.g., "[DOCUMENT: filename.pdf]" or "[filename.pdf]", whenever you reference a fact or guideline from that document.
+    4. Respond in ${langLabel} language in a clear, professional, and well-structured markdown format.
+  `;
+
+  // Format message history
+  const chatHistory = messages.map(m => `${m.sender.toUpperCase()}: ${m.text}`).join("\n");
+
+  const prompt = `
+    Source Documents Context:
+    ${sourceContext || "No documents selected. Please advise the user to select at least one source."}
+
+    Chat History:
+    ${chatHistory}
+
+    USER: ${promptText}
+    ASSISTANT:
+  `;
+
+  return callGeminiRaw(
+    config.selectedModel || "gemini-3-flash-preview",
+    config.apiKey,
+    systemInstruction,
+    prompt
+  );
+}
+
+// 11. NotebookLM Synthesized Notes/Study Guide Generator
+export async function generateNotebookNotes(
+  selectedDocuments: UploadedDocument[],
+  synthesisType: "summary" | "faq" | "study-guide",
+  config: RequestConfig
+): Promise<string> {
+  const langLabel = config.language === "vi" ? "Vietnamese" : "English";
+
+  let sourceContext = "";
+  for (const doc of selectedDocuments) {
+    if (doc.status !== "ready") continue;
+    sourceContext += `[DOCUMENT: ${doc.name}]\n${doc.extractedText}\n\n`;
+  }
+
+  let taskDescription = "";
+  if (synthesisType === "summary") {
+    taskDescription = "Generate a comprehensive, structural synthesis of all key concepts, standards, and guidelines found in the selected documents. Group them by topic.";
+  } else if (synthesisType === "faq") {
+    taskDescription = "Create a detailed FAQ (at least 5-8 questions & answers) addressing the most important teacher pain points, curriculum standards, and pedagogical guidelines mentioned in the documents. Cite sources in answers.";
+  } else {
+    taskDescription = "Design a structured Pedagogical Study & Lesson Design Guide based on the documents. Focus on identifying potential student misconceptions, active TWS inquiry lab ideas, and page-specific instructions.";
+  }
+
+  const systemInstruction = `
+    You are an expert curriculum editor. You synthesize complex documents into clean, action-oriented teacher materials.
+    You MUST rely ONLY on the provided source documents. Provide citations referencing document names in brackets, e.g., "[filename.pdf]".
+    Write in ${langLabel} language in high-quality markdown format.
+  `;
+
+  const prompt = `
+    Source Documents:
+    ${sourceContext}
+
+    Your Task:
+    ${taskDescription}
+
+    Format your output beautifully in markdown, using headings, tables, bullet points, and highlight warnings/important notes.
+  `;
+
+  return callGeminiRaw(
+    config.selectedModel || "gemini-3-flash-preview",
+    config.apiKey,
+    systemInstruction,
+    prompt
+  );
+}

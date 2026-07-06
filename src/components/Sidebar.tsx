@@ -20,6 +20,7 @@ export type TabType =
   | "question-gen" 
   | "guidance-gen" 
   | "remediation"
+  | "notebook"
   | "gap-analysis" 
   | "comparator" 
   | "documents"
@@ -75,8 +76,14 @@ export default function Sidebar({
     },
     {
       id: "remediation" as TabType,
-      label: language === "vi" ? "Thiết kế Kế hoạch Can thiệp Khắc phục" : "Academic Intervention & Remediation Design",
+      label: language === "vi" ? "Kế hoạch Can thiệp" : "Intervention & Remediation",
       icon: GraduationCap, // using GraduationCap for remediation
+      section: "AI COPROCESSOR"
+    },
+    {
+      id: "notebook" as TabType,
+      label: language === "vi" ? "Notebook chuyên sâu" : "NotebookLM Workspace",
+      icon: BookOpen,
       section: "AI COPROCESSOR"
     },
     {

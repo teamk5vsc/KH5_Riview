@@ -137,6 +137,95 @@ export const CAMBRIDGE_STANDARDS_DB: CambridgeStandard[] = [
     description: "Present results in structured tables and line graphs, identify trends in data, and draw scientific conclusions grounded in evidence.",
     descriptionVi: "Trình bày kết quả trong các bảng có cấu trúc và biểu đồ đường, xác định các xu hướng trong dữ liệu và rút ra các kết luận khoa học dựa trên bằng chứng.",
     bloomCognitiveLevel: "Analyzing"
+  },
+  // --- Stage 6 Standards ---
+  // Biology Stage 6
+  {
+    id: "6Bi_01",
+    code: "6Bi.01",
+    strand: "Biology",
+    strandVi: "Sinh học",
+    substrand: "Structure and Function",
+    substrandVi: "Cấu trúc và Chức năng",
+    stage: 6,
+    description: "Describe the human circulatory system in terms of the heart pumping blood through arteries, capillaries and veins, and describe its transport function.",
+    descriptionVi: "Mô tả hệ tuần hoàn ở người về tim bơm máu qua các động mạch, mao mạch và tĩnh mạch, và mô tả chức năng vận chuyển của nó.",
+    bloomCognitiveLevel: "Understanding"
+  },
+  {
+    id: "6Bi_02",
+    code: "6Bi.02",
+    strand: "Biology",
+    strandVi: "Sinh học",
+    substrand: "Structure and Function",
+    substrandVi: "Cấu trúc và Chức năng",
+    stage: 6,
+    description: "Describe the human respiratory system in terms of oxygen from the air moving into the blood in the lungs.",
+    descriptionVi: "Mô tả hệ hô hấp ở người về lượng oxy từ không khí đi vào máu ở phổi.",
+    bloomCognitiveLevel: "Understanding"
+  },
+  // Chemistry Stage 6
+  {
+    id: "6Ch_01",
+    code: "6Ch.01",
+    strand: "Chemistry",
+    strandVi: "Hóa học",
+    substrand: "States of Matter",
+    substrandVi: "Các trạng thái của chất",
+    stage: 6,
+    description: "Know that the temperature at which a substance changes state is a property of the substance.",
+    descriptionVi: "Biết rằng nhiệt độ tại đó một chất chuyển trạng thái là một đặc tính của chất đó.",
+    bloomCognitiveLevel: "Remembering"
+  },
+  {
+    id: "6Ch_03",
+    code: "6Ch.03",
+    strand: "Chemistry",
+    strandVi: "Hóa học",
+    substrand: "Materials Properties",
+    substrandVi: "Tính chất của Vật liệu",
+    stage: 6,
+    description: "Understand that electrical conductivity and thermal conductivity are properties of a substance.",
+    descriptionVi: "Hiểu rằng tính dẫn điện và dẫn nhiệt là những đặc tính của một chất.",
+    bloomCognitiveLevel: "Understanding"
+  },
+  // Physics Stage 6
+  {
+    id: "6Ps_01",
+    code: "6Ps.01",
+    strand: "Physics",
+    strandVi: "Vật lý",
+    substrand: "Forces and Motion",
+    substrandVi: "Lực và Chuyển động",
+    stage: 6,
+    description: "Describe the difference between mass, measured in kilograms (kg), and weight, measured in newtons (N).",
+    descriptionVi: "Mô tả sự khác biệt giữa khối lượng, đo bằng kilôgam (kg), và trọng lượng, đo bằng newton (N).",
+    bloomCognitiveLevel: "Analyzing"
+  },
+  {
+    id: "6Ps_02",
+    code: "6Ps.02",
+    strand: "Physics",
+    strandVi: "Vật lý",
+    substrand: "Forces and Motion",
+    substrandVi: "Lực và Chuyển động",
+    stage: 6,
+    description: "Describe the effect of gravity and know that when gravity changes, the weight changes but mass does not.",
+    descriptionVi: "Mô tả tác dụng của trọng lực và biết rằng khi trọng lực thay đổi, trọng lượng của vật thay đổi nhưng khối lượng thì không.",
+    bloomCognitiveLevel: "Understanding"
+  },
+  // TWS Stage 6
+  {
+    id: "6Tw_01",
+    code: "6Tw.01",
+    strand: "Thinking & Working Scientifically",
+    strandVi: "Tư duy & Làm việc Khoa học",
+    substrand: "Planning and Conducting",
+    substrandVi: "Lên kế hoạch và Tiến hành",
+    stage: 6,
+    description: "Describe how to control variables in an investigation and choose appropriate equipment for measuring.",
+    descriptionVi: "Mô tả cách kiểm soát các biến trong một cuộc điều tra và chọn thiết bị thích hợp để đo lường.",
+    bloomCognitiveLevel: "Evaluating"
   }
 ];
 
@@ -346,5 +435,104 @@ export const VINSCHOOL_LESSONS_DB: LessonPlan[] = [
     teacherGuidance: "Be prepared for the misconception that particles themselves expand or shrink. Reinforce that only the spaces between the particles change. Emphasize that gas compressibility is possible because of the vast empty spaces.",
     teacherGuidanceVi: "Hãy chuẩn bị cho quan niệm sai lầm rằng bản thân các hạt tự nở ra hoặc co lại. Củng cố rằng chỉ có khoảng cách giữa các hạt thay đổi. Nhấn mạnh rằng tính nén của chất khí có thể thực hiện được là nhờ có những khoảng trống rỗng khổng lồ.",
     updatedAt: "2026-07-02T10:38:00Z"
+  },
+  // --- Stage 6 Lessons ---
+  {
+    id: "vsc_g6_u1_l1",
+    grade: 6,
+    unitId: "U1_Circulatory",
+    unitTitle: "Human Body Systems",
+    unitTitleVi: "Các hệ cơ quan ở người",
+    lessonNumber: 1,
+    title: "The Human Circulatory System",
+    titleVi: "Hệ tuần hoàn ở người",
+    durationMinutes: 80,
+    learningObjectives: [
+      "Describe the human circulatory system in terms of the heart pumping blood through blood vessels.",
+      "Explain the transport of oxygen, nutrients, and waste products."
+    ],
+    learningObjectivesVi: [
+      "Mô tả hệ tuần hoàn ở người về tim bơm máu qua các mạch máu.",
+      "Giải thích sự vận chuyển oxy, chất dinh dưỡng và các sản phẩm chất thải."
+    ],
+    mappedCambridgeStandards: ["6Bi.01", "6Tw.01"],
+    twsElements: [
+      {
+        id: "tws_g6_1",
+        stage: "Planning",
+        stageVi: "Lên kế hoạch",
+        description: "Choose appropriate equipment to measure pulse rate accurately after variable physical exercises.",
+        descriptionVi: "Chọn thiết bị thích hợp để đo nhịp tim chính xác sau các bài tập thể chất khác nhau.",
+        bloomCognitiveLevel: "Evaluating"
+      }
+    ],
+    activities: [
+      "Pulse Investigation: Measure resting pulse vs pulse after 2 minutes of jumping jacks. Record in a table.",
+      "Flowchart Drawing: Label diagram of oxygenated (red) vs deoxygenated (dark red) blood paths in the body."
+    ],
+    activitiesVi: [
+      "Khảo sát Nhịp tim: Đo nhịp tim khi nghỉ ngơi so với nhịp tim sau 2 phút nhảy dây. Ghi kết quả vào bảng.",
+      "Vẽ sơ đồ dòng chảy: Dán nhãn sơ đồ đường đi của máu giàu oxy (đỏ) và nghèo oxy (đỏ sẫm) trong cơ thể."
+    ],
+    thinkingQuestions: [
+      "How do we know that the heart pumps blood and that it does not just sit in the blood vessels? What evidence did William Harvey use to prove blood flows in a loop?",
+      "Arteries have thick walls, while capillaries have extremely thin walls. How do we know this difference matches their functional tasks?"
+    ],
+    thinkingQuestionsVi: [
+      "Làm sao ta biết chắc chắn tim thực sự bơm máu liên tục chứ không phải máu chỉ đứng yên trong mạch? William Harvey đã dùng bằng chứng nào để chứng minh máu chảy tuần hoàn khép kín?",
+      "Động mạch có thành dày, trong khi mao mạch có thành cực kỳ mỏng. Làm sao ta biết sự khác biệt này hoàn toàn phù hợp với nhiệm vụ chức năng của chúng?"
+    ],
+    teacherGuidance: "Address the deep misconception that blood inside veins is blue. Emphasize it is dark red, and only appears blue through skin absorption. Explain Harvey's tight tourniquet experiment to demonstrate one-way valves.",
+    teacherGuidanceVi: "Giải quyết ngộ nhận phổ biến của học sinh rằng máu trong tĩnh mạch màu xanh lam. Nhấn mạnh máu tĩnh mạch có màu đỏ sẫm và chỉ nhìn thấy xanh qua da. Hướng dẫn thí nghiệm thắt ga-rô của Harvey để chứng minh van một chiều.",
+    updatedAt: "2026-07-06T15:00:00Z"
+  },
+  {
+    id: "vsc_g6_u2_l1",
+    grade: 6,
+    unitId: "U2_Forces",
+    unitTitle: "Forces and Gravity",
+    unitTitleVi: "Lực và Trọng lực",
+    lessonNumber: 1,
+    title: "Mass vs Weight and Gravity",
+    titleVi: "Khối lượng, Trọng lượng và Trọng lực",
+    durationMinutes: 80,
+    learningObjectives: [
+      "Distinguish between mass (kg) and weight (N).",
+      "Describe how weight changes when gravity changes while mass remains constant."
+    ],
+    learningObjectivesVi: [
+      "Phân biệt giữa khối lượng (kg) và trọng lượng (N).",
+      "Mô tả cách trọng lượng thay đổi khi trọng lực thay đổi trong khi khối lượng vẫn không đổi."
+    ],
+    mappedCambridgeStandards: ["6Ps.01", "6Ps.02", "6Tw.01"],
+    twsElements: [
+      {
+        id: "tws_g6_2",
+        stage: "Obtaining & Presenting Evidence",
+        stageVi: "Thu thập & Trình bày Bằng chứng",
+        description: "Measure forces in Newtons using spring balances and present data in weight-to-mass graphs.",
+        descriptionVi: "Đo lực bằng Newton sử dụng lực kế lò xo và trình bày dữ liệu trên biểu đồ trọng lượng-khối lượng.",
+        bloomCognitiveLevel: "Applying"
+      }
+    ],
+    activities: [
+      "Newtonmeter Lab: Hook different masses (100g, 200g, 500g) on a spring balance to read weight force in Newtons.",
+      "Moon Simulation: Calculate your own weight on the Moon, Jupiter, and Mars using local gravity coefficients."
+    ],
+    activitiesVi: [
+      "Thực hành Lực kế: Móc các vật nặng khác nhau (100g, 200g, 500g) vào lực kế lò xo để đọc lực trọng lượng bằng Newton.",
+      "Mô phỏng Trọng lượng Vũ trụ: Tính toán trọng lượng của chính bạn trên Mặt Trăng, Sao Mộc và Sao Hỏa dựa trên gia tốc trọng trường cục bộ."
+    ],
+    thinkingQuestions: [
+      "If you travel to the Moon, you can easily jump much higher, but you still need the same size spacesuit. How do we know your mass did not change?",
+      "Why does a heavy astronaut and a light pencil fall at the exact same rate in a vacuum chamber, if gravity pulls the astronaut with much more force?"
+    ],
+    thinkingQuestionsVi: [
+      "Nếu bạn lên Mặt Trăng, bạn có thể nhảy cao hơn rất dễ dàng, nhưng bạn vẫn mặc vừa bộ đồ phi hành gia cỡ cũ. Làm sao ta biết chắc chắn khối lượng của bạn không bị giảm đi?",
+      "Tại sao một phi hành gia nặng và một chiếc bút chì nhẹ lại rơi với tốc độ giống hệt nhau trong phòng chân không, dù lực hút Trái Đất kéo phi hành gia mạnh hơn rất nhiều?"
+    ],
+    teacherGuidance: "Be prepared for the misconception that weight and mass are the same because they are both used in daily language as 'weight'. Emphasize that weight is a pull force that changes depending on where you are, while mass is the quantity of matter.",
+    teacherGuidanceVi: "Hãy phòng tránh ngộ nhận học sinh coi khối lượng và trọng lượng là một do ngôn ngữ hàng ngày. Nhấn mạnh rằng trọng lượng là lực hút thay đổi tùy thuộc vào vị trí trong vũ trụ, còn khối lượng là lượng vật chất không đổi.",
+    updatedAt: "2026-07-06T15:00:00Z"
   }
 ];

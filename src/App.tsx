@@ -28,7 +28,9 @@ import {
   Info,
   GitCompare,
   UploadCloud,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Send,
+  MessageSquare
 } from "lucide-react";
 import { TRANSLATIONS } from "./translations";
 import { 
@@ -39,7 +41,9 @@ import {
   compareLessonsAI,
   importLessonFromText,
   auditCurriculumFramework,
-  generateRemediationPlan
+  generateRemediationPlan,
+  chatNotebookLM,
+  generateNotebookNotes
 } from "./geminiService";
 import { parseDocumentFile } from "./fileParser";
 
@@ -247,6 +251,21 @@ export default function App() {
   const [remediationResult, setRemediationResult] = useState<any | null>(null);
   const [isAnalyzingRemediation, setIsAnalyzingRemediation] = useState(false);
 
+  // NotebookLM states
+  const [selectedNotebookDocIds, setSelectedNotebookDocIds] = useState<string[]>([]);
+  const [notebookChatMessages, setNotebookChatMessages] = useState<ChatMessage[]>([]);
+  const [notebookChatInput, setNotebookChatInput] = useState("");
+  const [isNotebookChatLoading, setIsNotebookChatLoading] = useState(false);
+  const [notebookNotesResult, setNotebookNotesResult] = useState<string | null>(null);
+  const [isGeneratingNotebookNotes, setIsGeneratingNotebookNotes] = useState(false);
+  const [notebookActiveWorkspaceTab, setNotebookActiveWorkspaceTab] = useState<'chat' | 'notes'>('chat');
+
+  useEffect(() => {
+    if (documents.length > 0 && selectedNotebookDocIds.length === 0) {
+      setSelectedNotebookDocIds(documents.map(d => d.id));
+    }
+  }, [documents]);
+
   // Persist settings
   const handleSaveSettings = (key: string, model: string) => {
     localStorage.setItem("gemini_api_key", key);
@@ -411,6 +430,58 @@ export default function App() {
       setIsAnalyzingRemediation(false);
     }).finally(() => {
       setIsAnalyzingRemediation(false);
+    });
+  };
+
+  // NotebookLM handlers
+  const handleToggleNotebookDoc = (docId: string) => {
+    setSelectedNotebookDocIds(prev => 
+      prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]
+    );
+  };
+
+  const handleSendNotebookChat = () => {
+    if (!notebookChatInput.trim() || isNotebookChatLoading) return;
+    const userMsg: ChatMessage = {
+      id: `user_${Date.now()}`,
+      sender: "user",
+      text: notebookChatInput,
+      timestamp: new Date().toLocaleTimeString()
+    };
+    const newMsgs = [...notebookChatMessages, userMsg];
+    setNotebookChatMessages(newMsgs);
+    setNotebookChatInput("");
+    setIsNotebookChatLoading(true);
+
+    const activeDocs = documents.filter(d => selectedNotebookDocIds.includes(d.id));
+
+    handleAICallWrapper(async () => {
+      const reply = await chatNotebookLM(newMsgs, activeDocs, notebookChatInput, getAIConfig());
+      setNotebookChatMessages(prev => [
+        ...prev,
+        {
+          id: `ai_${Date.now()}`,
+          sender: "assistant",
+          text: reply,
+          timestamp: new Date().toLocaleTimeString()
+        }
+      ]);
+    }).finally(() => {
+      setIsNotebookChatLoading(false);
+    });
+  };
+
+  const handleGenerateNotebookNotes = (type: "summary" | "faq" | "study-guide") => {
+    setIsGeneratingNotebookNotes(true);
+    setNotebookNotesResult(null);
+    const activeDocs = documents.filter(d => selectedNotebookDocIds.includes(d.id));
+
+    handleAICallWrapper(async () => {
+      const notes = await generateNotebookNotes(activeDocs, type, getAIConfig());
+      setNotebookNotesResult(notes);
+      showToast(language === "vi" ? "Đã tổng hợp tài liệu đối chiếu thành công!" : "Ingested sources successfully synthesized!");
+    }).finally(() => {
+      setIsGeneratingNotebookNotes(false);
     });
   };
 
@@ -593,7 +664,7 @@ export default function App() {
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold uppercase tracking-wider font-mono text-gray-400">{t.stageLabel}</span>
               <div className="flex bg-gray-100 rounded-lg p-0.5 border border-gray-200">
-                {([1, 2, 3, 4, 5] as const).map((grade) => (
+                {([1, 2, 3, 4, 5, 6] as const).map((grade) => (
                   <button
                     key={grade}
                     onClick={() => setGradeFilter(grade)}
@@ -1553,6 +1624,323 @@ export default function App() {
             </div>
           )}
 
+          {/* TAB 11: NOTEBOOKLM EXPERT WORKSPACE */}
+          {currentTab === "notebook" && (
+            <div className="max-w-5xl mx-auto grid grid-cols-12 gap-6 h-[calc(100vh-180px)] select-none">
+              
+              {/* Left Pane: Ingested Sources Checklist (4/12 width) */}
+              <div className="col-span-4 bg-white rounded-2xl border border-gray-200 shadow-sm p-4.5 flex flex-col h-full overflow-hidden font-sans">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-3 shrink-0">
+                  <div>
+                    <h2 className="text-xs font-bold text-gray-900 flex items-center gap-1.5 font-mono uppercase tracking-wide">
+                      <Database className="w-4 h-4 text-amber-500" />
+                      {language === "vi" ? "Bộ Nguồn Tư Liệu" : "Sources Grounding"}
+                    </h2>
+                    <p className="text-[9px] text-gray-450 mt-0.5">
+                      {language === "vi" ? "Chọn tài liệu để AI tập trung đối chiếu" : "Select sources for active grounding"}
+                    </p>
+                  </div>
+                  <span className="px-2 py-0.5 bg-amber-50 text-amber-900 border border-amber-200 rounded text-[10px] font-bold font-mono">
+                    {selectedNotebookDocIds.length}/{documents.length}
+                  </span>
+                </div>
+
+                {/* Sources list */}
+                <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
+                  {documents.length === 0 ? (
+                    <div className="text-center py-10 text-gray-400">
+                      <p className="text-xs">{language === "vi" ? "Chưa có tài liệu nào. Vui lòng tải lên trước." : "No documents uploaded yet."}</p>
+                    </div>
+                  ) : (
+                    documents.map(doc => {
+                      const isSelected = selectedNotebookDocIds.includes(doc.id);
+                      return (
+                        <div 
+                          key={doc.id}
+                          onClick={() => handleToggleNotebookDoc(doc.id)}
+                          className={`p-3 border rounded-xl flex items-start gap-2.5 transition-all cursor-pointer select-none ${
+                            isSelected 
+                              ? "bg-amber-50/20 border-amber-300 shadow-xs" 
+                              : "bg-gray-50/40 border-gray-200 hover:bg-gray-55 hover:border-gray-300"
+                          }`}
+                        >
+                          <input 
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}} // handled by parent onClick
+                            className="mt-0.5 rounded border-gray-300 text-amber-500 focus:ring-amber-500 cursor-pointer w-3.5 h-3.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-semibold text-gray-800 truncate block">
+                              {doc.name}
+                            </span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[9px] font-mono text-gray-400 uppercase">
+                                {doc.type} • {(doc.fileSize / 1000).toFixed(0)} KB
+                              </span>
+                              {doc.targetGrade && (
+                                <span className="text-[8px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-250/20 px-1 rounded">
+                                  LỚP {doc.targetGrade}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="border-t border-gray-100 pt-3 mt-3 shrink-0">
+                  <button
+                    onClick={() => setCurrentTab("documents")}
+                    className="w-full py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{language === "vi" ? "Quản lý / Nạp thêm tệp" : "Ingest New Sources"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Right Pane: Interactive Workspace (8/12 width) */}
+              <div className="col-span-8 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
+                
+                {/* Header Switcher tabs */}
+                <div className="flex border-b border-gray-100 bg-gray-50 shrink-0">
+                  <button
+                    onClick={() => setNotebookActiveWorkspaceTab('chat')}
+                    className={`flex-1 py-3 text-xs font-bold border-b-2 flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      notebookActiveWorkspaceTab === 'chat'
+                        ? "border-amber-500 text-amber-900 bg-white"
+                        : "border-transparent text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>{language === "vi" ? "Hỏi đáp Chuyên sâu (Chat)" : "Interactive Grounded Q&A"}</span>
+                  </button>
+                  <button
+                    onClick={() => setNotebookActiveWorkspaceTab('notes')}
+                    className={`flex-1 py-3 text-xs font-bold border-b-2 flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      notebookActiveWorkspaceTab === 'notes'
+                        ? "border-amber-500 text-amber-900 bg-white"
+                        : "border-transparent text-gray-400 hover:text-gray-600"
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>{language === "vi" ? "Tổng hợp & Tổng hợp Sư phạm" : "Academic Notes & Synthesis"}</span>
+                  </button>
+                </div>
+
+                {/* Workspace Content */}
+                <div className="flex-1 overflow-hidden relative">
+                  
+                  {/* Chat workspace */}
+                  {notebookActiveWorkspaceTab === 'chat' && (
+                    <div className="h-full flex flex-col justify-between">
+                      <div className="flex-1 overflow-y-auto p-5 space-y-4 select-text">
+                        {notebookChatMessages.length === 0 ? (
+                          <div className="h-full flex flex-col items-center justify-center text-center p-8 max-w-sm mx-auto space-y-3.5 select-none">
+                            <div className="w-12 h-12 bg-amber-55/10 rounded-2xl flex items-center justify-center text-amber-500 shadow-xs border border-amber-100">
+                              <MessageSquare className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-gray-700">
+                                {language === "vi" ? "Trợ lý Tra cứu Tài liệu Chuyên sâu" : "Source Grounded Chatbot"}
+                              </h4>
+                              <p className="text-[10px] text-gray-400 leading-relaxed mt-1">
+                                {language === "vi" 
+                                  ? "Nhập câu hỏi bất kỳ. AI sẽ chỉ trích lục dữ liệu từ các tài liệu bạn đã tích chọn ở cột bên trái và trả lời chuẩn xác kèm trích dẫn nguồn gốc cụ thể."
+                                  : "Ask anything about the checked materials. The AI will strictly search through them and respond with precise source tags."}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          notebookChatMessages.map(msg => (
+                            <div 
+                              key={msg.id} 
+                              className={`flex items-start gap-3 ${msg.sender === "user" ? "flex-row-reverse" : ""}`}
+                            >
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 shadow-sm font-mono text-[9px] font-bold ${
+                                msg.sender === "user" 
+                                  ? "bg-amber-500 text-white" 
+                                  : "bg-[#18181b] text-amber-400"
+                              }`}>
+                                {msg.sender === "user" ? "ME" : "AI"}
+                              </div>
+                              <div className={`p-3 rounded-2xl max-w-[80%] text-xs leading-relaxed font-sans select-text ${
+                                msg.sender === "user"
+                                  ? "bg-amber-500 text-white"
+                                  : "bg-gray-50 border border-gray-200 text-gray-800"
+                              }`}>
+                                <div className="space-y-1.5 whitespace-pre-wrap select-text">
+                                  {/* Format citations visually in output */}
+                                  {msg.text.split(/(\[[^\]]+\.pdf\]|\[[^\]]+\.docx\]|\[[^\]]+\.xlsx\]|\[DOCUMENT:[^\]]+\])/g).map((part, pIdx) => {
+                                    const isCitation = part.startsWith('[') && part.endsWith(']');
+                                    if (isCitation) {
+                                      const cleanName = part.replace('[DOCUMENT:', '').replace('[', '').replace(']', '');
+                                      return (
+                                        <span key={pIdx} className={`px-1.5 py-0.5 mx-0.5 rounded font-mono text-[9px] font-bold border inline-flex items-center gap-0.5 ${
+                                          msg.sender === "user"
+                                            ? "bg-white/20 text-white border-white/30"
+                                            : "bg-amber-100 text-amber-900 border-amber-200"
+                                        }`} title="Reference Source Document">
+                                          <Database className="w-2 h-2 shrink-0" />
+                                          {cleanName}
+                                        </span>
+                                      );
+                                    }
+                                    return part;
+                                  })}
+                                </div>
+                                <span className={`text-[8px] font-mono block mt-1.5 text-right ${
+                                  msg.sender === "user" ? "text-white/60" : "text-gray-400"
+                                }`}>
+                                  {msg.timestamp}
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                        {isNotebookChatLoading && (
+                          <div className="flex items-center gap-3 animate-pulse">
+                            <div className="w-7 h-7 rounded-full bg-[#18181b] text-amber-400 flex items-center justify-center shrink-0">
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            </div>
+                            <div className="bg-gray-50 border border-gray-150/60 p-3 rounded-2xl text-xs text-gray-500 font-sans">
+                              {language === "vi" ? "AI đang tra cứu tài liệu và xây dựng câu trả lời..." : "AI is auditing source databases..."}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Chat Input Bar */}
+                      <div className="p-3.5 border-t border-gray-150 bg-gray-50 shrink-0 select-none">
+                        <div className="relative flex items-center">
+                          <input
+                            type="text"
+                            placeholder={
+                              selectedNotebookDocIds.length === 0 
+                                ? (language === "vi" ? "Vui lòng chọn ít nhất 1 nguồn ở cột trái..." : "Please check at least one source document...")
+                                : (language === "vi" ? "Hỏi bất kỳ điều gì về tài liệu đối chiếu..." : "Ask a question about the active sources...")
+                            }
+                            value={notebookChatInput}
+                            onChange={(e) => setNotebookChatInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleSendNotebookChat(); }}
+                            disabled={selectedNotebookDocIds.length === 0 || isNotebookChatLoading}
+                            className="w-full bg-white border border-gray-250 rounded-xl pl-4 pr-12 py-2.5 text-xs focus:ring-1 focus:ring-amber-500/20 focus:border-amber-500 focus:outline-none placeholder-gray-400 text-gray-700 disabled:bg-gray-100"
+                          />
+                          <button
+                            onClick={handleSendNotebookChat}
+                            disabled={!notebookChatInput.trim() || isNotebookChatLoading || selectedNotebookDocIds.length === 0}
+                            className="absolute right-2 p-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg disabled:bg-gray-200 disabled:text-gray-400 cursor-pointer transition-all shadow-sm flex items-center justify-center"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Notes workspace */}
+                  {notebookActiveWorkspaceTab === 'notes' && (
+                    <div className="h-full flex flex-col p-5 overflow-hidden font-sans">
+                      
+                      {/* Synthesizer Toolbar */}
+                      <div className="flex flex-wrap gap-2.5 mb-4 shrink-0 select-none">
+                        <button
+                          onClick={() => handleGenerateNotebookNotes("summary")}
+                          disabled={isGeneratingNotebookNotes || selectedNotebookDocIds.length === 0}
+                          className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-900 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-amber-550" />
+                          <span>{language === "vi" ? "Tóm tắt Chuyên sâu" : "Deep Summary"}</span>
+                        </button>
+                        <button
+                          onClick={() => handleGenerateNotebookNotes("faq")}
+                          disabled={isGeneratingNotebookNotes || selectedNotebookDocIds.length === 0}
+                          className="px-3.5 py-2 bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-900 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <HelpCircle className="w-3.5 h-3.5 text-sky-500" />
+                          <span>{language === "vi" ? "Sinh Bộ Câu hỏi FAQs" : "Academic FAQs"}</span>
+                        </button>
+                        <button
+                          onClick={() => handleGenerateNotebookNotes("study-guide")}
+                          disabled={isGeneratingNotebookNotes || selectedNotebookDocIds.length === 0}
+                          className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-250 text-emerald-900 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>{language === "vi" ? "Cẩm nang Sư phạm mẫu" : "Pedagogical Guide"}</span>
+                        </button>
+                      </div>
+
+                      {/* Display panel */}
+                      <div className="flex-1 border border-gray-200 bg-gray-50/20 rounded-xl overflow-y-auto p-5 relative select-text">
+                        {isGeneratingNotebookNotes && (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center p-8 bg-white/70 backdrop-blur-xs select-none z-10">
+                            <RefreshCw className="w-8 h-8 text-amber-500 animate-spin mb-3" />
+                            <p className="text-xs font-semibold text-gray-700">{language === "vi" ? "AI đang tổng hợp dữ liệu học thuật..." : "Ingesting and organizing reference content..."}</p>
+                            <p className="text-[10px] text-gray-400 mt-1 font-mono">Applying Grounded Knowledge Synthesis</p>
+                          </div>
+                        )}
+
+                        {notebookNotesResult ? (
+                          <div className="space-y-4 select-text">
+                            <div className="flex justify-between items-center border-b border-gray-150 pb-3 mb-2 shrink-0 select-none">
+                              <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wide">
+                                {language === "vi" ? "Văn bản phân tích đối chiếu" : "Ingested Synthesized Material"}
+                              </span>
+                              <button
+                                onClick={() => copyText(notebookNotesResult)}
+                                className="px-2.5 py-1 text-[10px] font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 rounded border border-amber-200 transition-all cursor-pointer flex items-center gap-1"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>{language === "vi" ? "Sao chép" : "Copy"}</span>
+                              </button>
+                            </div>
+                            
+                            <div className="text-xs text-gray-700 leading-relaxed space-y-3 font-sans select-text whitespace-pre-wrap">
+                              {notebookNotesResult.split('\n').map((line, lineIdx) => {
+                                if (line.startsWith('# ')) {
+                                  return <h1 key={lineIdx} className="text-sm font-bold text-gray-900 mt-4 border-b border-gray-100 pb-1">{line.replace('# ', '')}</h1>;
+                                }
+                                if (line.startsWith('## ')) {
+                                  return <h2 key={lineIdx} className="text-xs font-bold text-gray-800 mt-3">{line.replace('## ', '')}</h2>;
+                                }
+                                if (line.startsWith('### ')) {
+                                  return <h3 key={lineIdx} className="text-[11px] font-bold text-gray-700 mt-2">{line.replace('### ', '')}</h3>;
+                                }
+                                if (line.startsWith('* ') || line.startsWith('- ')) {
+                                  return <li key={lineIdx} className="ml-4 list-disc mt-1">{line.substring(2)}</li>;
+                                }
+                                return <p key={lineIdx} className="mt-1">{line}</p>;
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="h-full flex flex-col items-center justify-center text-center p-8 max-w-sm mx-auto space-y-3 text-gray-400 select-none">
+                            <FileText className="w-10 h-10 text-amber-400 animate-pulse" />
+                            <div>
+                              <h4 className="text-xs font-bold text-gray-700">
+                                {language === "vi" ? "Trình kiến tạo tư liệu học thuật" : "Academic Notes Workspace"}
+                              </h4>
+                              <p className="text-[10px] text-gray-400 leading-relaxed mt-1">
+                                {language === "vi" 
+                                  ? "Vui lòng chọn ít nhất một tệp nguồn ở cột trái, sau đó bấm nút sinh tóm tắt, FAQ hoặc cẩm nang đối chiếu từ thanh công cụ phía trên."
+                                  : "Select source materials and click a tool button to synthesize study resources."}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+
+            </div>
+          )}
+
           {/* TAB 7: LESSON COMPARATOR */}
           {currentTab === "comparator" && (
             <div className="max-w-5xl mx-auto h-full space-y-6">
@@ -1763,13 +2151,28 @@ export default function App() {
               {/* Left panel: File List */}
               <div className="col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col h-140">
                 <h2 className="text-sm font-bold text-gray-900">{t.docsTitle}</h2>
-                <p className="text-xs text-gray-500 mt-1">{t.docsSubtitle}</p>
+                <p className="text-xs text-gray-550 mt-1 mb-3">{t.docsSubtitle}</p>
                 
-                <div className="mt-4 flex-1 overflow-y-auto space-y-2.5">
+                {/* AI Grounding Active Sync Banner */}
+                <div className="bg-amber-50/40 border border-amber-200/50 rounded-xl p-3 text-xs text-amber-955 font-sans mb-3 flex items-start gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5 animate-pulse" />
+                  <div>
+                    <span className="font-bold block text-[10px] uppercase tracking-wide font-mono text-amber-900">
+                      {language === "vi" ? "Tự động Đồng bộ hóa AI" : "AI Ingestion Active"}
+                    </span>
+                    <p className="text-[9px] text-amber-800/90 leading-relaxed mt-0.5">
+                      {language === "vi" 
+                        ? "Tất cả các tài liệu ở danh sách dưới đã được nạp tự động vào bộ não AI để làm dữ liệu nền tảng đối chiếu (AI Knowledge Base) cho các tác vụ kiểm định giáo án, lập kế hoạch can thiệp học thuật và sinh câu hỏi tư duy."
+                        : "All files below are actively indexed in the AI Grounding database. When you generate questions or run audits, the AI cross-references this material."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-2.5">
                   {documents.map((doc) => (
                     <div 
                       key={doc.id}
-                      className="p-3 bg-gray-50 border border-gray-100 hover:bg-gray-100/50 rounded-xl flex items-center justify-between transition-colors animate-fade-in"
+                      className="p-3 bg-gray-55 border border-gray-150/60 hover:bg-gray-100/50 rounded-xl flex items-center justify-between transition-colors animate-fade-in"
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5 font-sans">
@@ -1780,9 +2183,20 @@ export default function App() {
                             {doc.name}
                           </span>
                         </div>
-                        <p className="text-[9px] font-mono text-gray-400 uppercase">
-                          {doc.type} • {(doc.fileSize / 1000).toFixed(0)} KB
-                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                          <p className="text-[9px] font-mono text-gray-400 uppercase">
+                            {doc.type} • {(doc.fileSize / 1000).toFixed(0)} KB
+                          </p>
+                          {doc.targetGrade && (
+                            <span className="inline-flex items-center text-[8px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-250/20 px-1 py-0.2 rounded">
+                              LỚP {doc.targetGrade}
+                            </span>
+                          )}
+                          <span className="inline-flex items-center gap-0.5 text-[8px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-250/30 px-1 py-0.2 rounded uppercase">
+                            <CheckCircle className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                            {language === "vi" ? "AI Đã Đọc" : "AI Ingested"}
+                          </span>
+                        </div>
                       </div>
                       
                       <button
