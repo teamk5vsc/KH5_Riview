@@ -54,6 +54,15 @@ interface RequestConfig {
   onProgress?: (modelUsed: string, attempt: number, status: string) => void;
 }
 
+// Helper to clean Markdown json fences if raw text is returned
+function cleanJsonString(text: string): string {
+  let cleaned = text.trim();
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+  }
+  return cleaned;
+}
+
 // Universal fetch post to Google Gemini API
 async function callGeminiRaw(
   model: string,
@@ -63,7 +72,9 @@ async function callGeminiRaw(
   responseSchema?: any
 ): Promise<any> {
   const modelIdentifier = mapModelName(model);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelIdentifier}:generateContent?key=${apiKey}`;
+  // Route stable models to v1, and preview/experimental models to v1beta API
+  const apiVersion = modelIdentifier.includes("preview") || modelIdentifier.includes("exp") ? "v1beta" : "v1";
+  const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${modelIdentifier}:generateContent?key=${apiKey}`;
 
   const payload: any = {
     contents: [
@@ -97,6 +108,13 @@ async function callGeminiRaw(
   });
 
   if (!response.ok) {
+    // If structured output fails, retry immediately in raw text mode with instructions to format as JSON
+    if (responseSchema) {
+      console.warn(`Gemini call with schema failed on ${modelIdentifier} (${response.status}). Retrying without responseSchema...`);
+      const retryPrompt = `${prompt}\n\nIMPORTANT: You must return the output strictly as a valid JSON object matching the requested schema. Return ONLY the raw JSON code block wrapped in \`\`\`json ... \`\`\`. Do not include any other markdown text or conversational prefix/suffix.`;
+      return callGeminiRaw(model, apiKey, systemInstruction, retryPrompt, undefined);
+    }
+
     const errText = await response.text();
     let errMsg = `HTTP Error ${response.status}`;
     try {
@@ -126,6 +144,7 @@ async function executeWithFallback(
     ...FALLBACK_MODELS.filter(m => m !== config.selectedModel)
   ];
 
+  let firstError: Error | null = null;
   let lastError: Error | null = null;
 
   for (let i = 0; i < modelsToTry.length; i++) {
@@ -139,9 +158,12 @@ async function executeWithFallback(
       if (config.onProgress) {
         config.onProgress(currentModel, i + 1, "success");
       }
-      return result;
+      return cleanJsonString(result);
     } catch (err: any) {
       console.warn(`Model ${currentModel} failed on attempt ${i + 1}: ${err.message}`);
+      if (i === 0) {
+        firstError = err;
+      }
       lastError = err;
       if (config.onProgress) {
         config.onProgress(currentModel, i + 1, `failed: ${err.message}`);
@@ -149,7 +171,8 @@ async function executeWithFallback(
     }
   }
 
-  throw lastError || new Error("All fallback models failed.");
+  // Throw the first error (user's selected model) as it represents the core connection attempt
+  throw firstError || lastError || new Error("All fallback models failed.");
 }
 
 // 1. Analyze Lesson for Alignment & Opportunity Gaps
