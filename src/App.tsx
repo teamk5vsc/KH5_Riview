@@ -46,7 +46,8 @@ import {
   chatNotebookLM,
   generateNotebookNotes,
   generateCustomLessonPlan,
-  generateSlidesFromLesson
+  generateSlidesFromLesson,
+  extractCurriculumFromDocument
 } from "./geminiService";
 import { parseDocumentFile } from "./fileParser";
 
@@ -138,10 +139,24 @@ export default function App() {
   const [showDesignProposal, setShowDesignProposal] = useState(false);
 
   // Active curriculum datasets (persisted in client state)
-  const [lessons, setLessons] = useState<LessonPlan[]>(VINSCHOOL_LESSONS_DB);
-  const [standards, setStandards] = useState<CambridgeStandard[]>(CAMBRIDGE_STANDARDS_DB);
-  const [selectedLessonId, setSelectedLessonId] = useState<string>(VINSCHOOL_LESSONS_DB[0].id);
-  const [selectedStandardId, setSelectedStandardId] = useState<string>(CAMBRIDGE_STANDARDS_DB[0].id);
+  const [lessons, setLessons] = useState<LessonPlan[]>(() => {
+    const saved = localStorage.getItem("curriculum_lessons");
+    return saved ? JSON.parse(saved) : VINSCHOOL_LESSONS_DB;
+  });
+  const [standards, setStandards] = useState<CambridgeStandard[]>(() => {
+    const saved = localStorage.getItem("curriculum_standards");
+    return saved ? JSON.parse(saved) : CAMBRIDGE_STANDARDS_DB;
+  });
+  const [selectedLessonId, setSelectedLessonId] = useState<string>(() => {
+    const saved = localStorage.getItem("curriculum_lessons");
+    const list = saved ? JSON.parse(saved) : VINSCHOOL_LESSONS_DB;
+    return list[0]?.id || "";
+  });
+  const [selectedStandardId, setSelectedStandardId] = useState<string>(() => {
+    const saved = localStorage.getItem("curriculum_standards");
+    const list = saved ? JSON.parse(saved) : CAMBRIDGE_STANDARDS_DB;
+    return list[0]?.id || "";
+  });
 
   // Global search & filtering
   const [globalSearch, setGlobalSearch] = useState("");
@@ -262,6 +277,9 @@ export default function App() {
   const [notebookNotesResult, setNotebookNotesResult] = useState<string | null>(null);
   const [isGeneratingNotebookNotes, setIsGeneratingNotebookNotes] = useState(false);
   const [notebookActiveWorkspaceTab, setNotebookActiveWorkspaceTab] = useState<'chat' | 'notes'>('chat');
+
+  // Extraction loader state
+  const [isExtractingCurriculum, setIsExtractingCurriculum] = useState<string | null>(null);
 
   useEffect(() => {
     if (documents.length > 0 && selectedNotebookDocIds.length === 0) {
@@ -496,6 +514,50 @@ export default function App() {
       showToast(language === "vi" ? "Đã tổng hợp tài liệu đối chiếu thành công!" : "Ingested sources successfully synthesized!");
     }).finally(() => {
       setIsGeneratingNotebookNotes(false);
+    });
+  };
+
+  const handleExtractCurriculum = (docId: string) => {
+    const doc = documents.find(d => d.id === docId);
+    if (!doc) return;
+    setIsExtractingCurriculum(docId);
+
+    handleAICallWrapper(async () => {
+      const data = await extractCurriculumFromDocument(doc.extractedText, gradeFilter, getAIConfig());
+      if (data && data.lessons && data.standards) {
+        // Format them with stage and active identifiers
+        const formattedStandards = data.standards.map((s: any, idx: number) => ({
+          ...s,
+          id: `${gradeFilter}_std_${idx}_${Date.now()}`,
+          stage: gradeFilter
+        }));
+
+        const formattedLessons = data.lessons.map((l: any, idx: number) => ({
+          ...l,
+          id: `extracted_l_${idx}_${Date.now()}`,
+          grade: gradeFilter,
+          // Fallbacks for optional fields
+          titleVi: l.titleVi || l.title,
+          unitTitleVi: l.unitTitleVi || l.unitTitle
+        }));
+
+        setStandards(formattedStandards);
+        setLessons(formattedLessons);
+        
+        localStorage.setItem("curriculum_standards", JSON.stringify(formattedStandards));
+        localStorage.setItem("curriculum_lessons", JSON.stringify(formattedLessons));
+
+        if (formattedLessons.length > 0) {
+          setSelectedLessonId(formattedLessons[0].id);
+        }
+        if (formattedStandards.length > 0) {
+          setSelectedStandardId(formattedStandards[0].id);
+        }
+
+        showToast(language === "vi" ? "Đã đồng bộ danh mục bài học từ sách giáo khoa mới!" : "Synchronized curriculum lessons and standards from file successfully!");
+      }
+    }).finally(() => {
+      setIsExtractingCurriculum(null);
     });
   };
 
@@ -1076,10 +1138,14 @@ export default function App() {
                     </div>
                     
                     <div className="space-y-2">
-                      <p className="text-xs text-gray-500 leading-relaxed font-sans max-w-sm">
-                        {language === "vi"
-                          ? "Vui lòng chọn một bài học ở danh mục bên trái hoặc tải lên giáo án để bắt đầu phân tích tương thích chuẩn Cambridge và năng lực TWS."
-                          : "Please select a lesson from the left directory or import a new file to begin mapping standards and TWS integration audits."}
+                      <p className="text-xs text-gray-650 leading-relaxed font-sans max-w-sm">
+                        {lessons.length === 0
+                          ? (language === "vi"
+                              ? "Chưa có dữ liệu bài học nào. Vui lòng vào tab 'Kho tài liệu', tải lên sách giáo khoa lớp tương ứng (Stage 5 / Stage 6) và bấm nút 'Đồng bộ danh mục' để AI tự động trích xuất các bài học chính xác."
+                              : "No curriculum data loaded. Please upload a textbook or syllabus in 'Kho tài liệu' tab, then click 'Sync Lessons' to automatically index lessons.")
+                          : (language === "vi"
+                              ? "Vui lòng chọn một bài học ở danh mục bên trái hoặc tải lên giáo án để bắt đầu phân tích tương thích chuẩn Cambridge và năng lực TWS."
+                              : "Please select a lesson from the left directory or import a new file to begin mapping standards and TWS integration audits.")}
                       </p>
                     </div>
                   </div>
@@ -2571,15 +2637,30 @@ export default function App() {
                         </div>
                       </div>
                       
-                      <button
-                        onClick={() => {
-                          setSelectedDocIdReader(doc.id);
-                          setIsSplitReaderOpen(true);
-                        }}
-                        className="px-2 py-1 text-[10px] font-bold text-amber-900 hover:bg-amber-100/60 rounded cursor-pointer"
-                      >
-                        {t.btnReadPanel}
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => {
+                            setSelectedDocIdReader(doc.id);
+                            setIsSplitReaderOpen(true);
+                          }}
+                          className="px-2 py-1 text-[10px] font-bold text-gray-500 hover:bg-gray-100 rounded cursor-pointer"
+                        >
+                          {t.btnReadPanel}
+                        </button>
+                        <button
+                          onClick={() => handleExtractCurriculum(doc.id)}
+                          disabled={isExtractingCurriculum !== null}
+                          className="px-2.5 py-1 text-[10px] font-bold text-amber-950 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded border border-amber-500 shadow-sm transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                          title={language === "vi" ? "Trích xuất danh mục bài học từ tài liệu này" : "Sync lessons & standards database from this file"}
+                        >
+                          {isExtractingCurriculum === doc.id ? (
+                            <RefreshCw className="w-3 h-3 animate-spin text-white" />
+                          ) : (
+                            <Sparkles className="w-3 h-3 text-white" />
+                          )}
+                          <span>{language === "vi" ? "Đồng bộ" : "Sync DB"}</span>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

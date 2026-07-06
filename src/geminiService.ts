@@ -1012,3 +1012,101 @@ export async function generateSlidesFromLesson(
   const responseText = await executeWithFallback(config, systemInstruction, prompt, schema);
   return JSON.parse(responseText);
 }
+
+// 14. Extract active lessons and standards list from uploaded document
+export async function extractCurriculumFromDocument(
+  documentText: string,
+  targetGrade: number,
+  config: RequestConfig
+): Promise<{ standards: any[]; lessons: any[] }> {
+  const langLabel = config.language === "vi" ? "Vietnamese" : "English";
+
+  const systemInstruction = `
+    You are an expert AI curriculum extraction service. 
+    Your task is to analyze the provided curriculum document, textbook content, or syllabus text for Grade ${targetGrade} (Stage ${targetGrade}), and extract the structured list of Vinschool Lessons and Cambridge Standards.
+    
+    RULES:
+    1. Extract official or implied Cambridge Standards. For each standard, provide code, strand (e.g., Biology, Chemistry, Physics, Thinking & Working Scientifically), substrand, description, and bloom level.
+    2. Extract Vinschool Lessons. For each lesson, provide unitId, unitTitle, lessonNumber, title, durationMinutes, learningObjectives, mappedCambridgeStandards (must refer to codes in the standards list), sample activities, thinking questions, and teacher guidance.
+    3. Make sure to generate detailed, realistic content in ${langLabel} matching the document context.
+    4. Return ONLY a valid JSON output matching the requested schema.
+  `;
+
+  const prompt = `
+    Document Text (Stage ${targetGrade}):
+    ${documentText.substring(0, 100000)} // limit size to prevent context overflow but cover a large chunk
+
+    Please extract all lessons and standards found in this text. If it is a full textbook, extract a representative sample of at least 3-5 main lessons and corresponding standards mentioned in the chapters.
+  `;
+
+  const schema = {
+    type: "OBJECT",
+    properties: {
+      standards: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            code: { type: "STRING" },
+            strand: { type: "STRING" },
+            substrand: { type: "STRING" },
+            description: { type: "STRING" },
+            descriptionVi: { type: "STRING" },
+            bloomCognitiveLevel: { type: "STRING" }
+          },
+          required: ["code", "strand", "description"]
+        }
+      },
+      lessons: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            unitId: { type: "STRING" },
+            unitTitle: { type: "STRING" },
+            unitTitleVi: { type: "STRING" },
+            lessonNumber: { type: "INTEGER" },
+            title: { type: "STRING" },
+            titleVi: { type: "STRING" },
+            durationMinutes: { type: "INTEGER" },
+            learningObjectives: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            },
+            learningObjectivesVi: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            },
+            mappedCambridgeStandards: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            },
+            activities: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            },
+            activitiesVi: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            },
+            thinkingQuestions: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            },
+            thinkingQuestionsVi: {
+              type: "ARRAY",
+              items: { type: "STRING" }
+            },
+            teacherGuidance: { type: "STRING" },
+            teacherGuidanceVi: { type: "STRING" }
+          },
+          required: ["unitId", "unitTitle", "lessonNumber", "title", "learningObjectives", "mappedCambridgeStandards"]
+        }
+      }
+    },
+    required: ["standards", "lessons"]
+  };
+
+  const responseText = await executeWithFallback(config, systemInstruction, prompt, schema);
+  return JSON.parse(responseText);
+}
