@@ -268,7 +268,7 @@ export default function App() {
         mappedStandardCodes: ["5Ps.01", "5Ps.02", "5Pe.01"],
         twsFocus: ["5TWSp.03", "5TWSa.05"]
       }
-    ];
+    ]);
   });
   const [activeFrameworkTopicId, setActiveFrameworkTopicId] = useState<string>("topic_1");
   const [frameworkAuditResult, setFrameworkAuditResult] = useState<any | null>(null);
